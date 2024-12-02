@@ -3,6 +3,10 @@ from .base import FeatureExtractor
 
 # Import implementations to ensure decorators are executed
 from . import hog  # This ensures the HOG implementation is registered
+from . import hsv
+from . import lbp
+from . import resnet
+from . import combined
 
 def get_feature_extractor(name: str, **kwargs) -> FeatureExtractor:
     """Get a feature extractor instance by name.
