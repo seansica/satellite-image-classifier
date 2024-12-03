@@ -13,6 +13,39 @@ The framework implements a complete machine learning pipeline that handles every
 3. Comprehensive Evaluation: Models are evaluated using multiple metrics including accuracy, precision, recall, F1 score, and ROC curves.
 4. Easy Experimentation: Command-line interface makes it simple to try different models and parameters.
 
+```mermaid
+flowchart TB
+    subgraph Input
+        D[Dataset Directory] --> DL[DatasetLoader]
+        DL --> PP[Preprocessing]
+    end
+
+    subgraph Feature Extraction
+        PP --> FE[Feature Extractors]
+        FE --> |HOG Features| FM[Feature Matrix]
+        FE -.-> |Future: HSV, LBP, etc.| FM
+    end
+
+    subgraph Model Training
+        FM --> |Training Data| MT[Model Training]
+        L[Labels] --> MT
+        MT --> |SVM| M[Models]
+        MT --> |Logistic Regression| M
+        MT -.-> |Future: Neural Networks, etc.| M
+    end
+
+    subgraph Evaluation
+        M --> E[Evaluation]
+        E --> |Metrics| R[Results]
+        E --> |Visualizations| V[Visualizations]
+    end
+
+    classDef future fill:#f9f,stroke:#333,stroke-dasharray: 5 5
+    classDef current fill:#9f9,stroke:#333
+    class D,DL,PP,FM,M,E,R,V current
+    class HSV,LBP future
+```
+
 ## Getting Started
 
 ### Installation
