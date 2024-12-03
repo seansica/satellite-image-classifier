@@ -2,6 +2,8 @@
 
 This framework provides a modular, extensible system for evaluating machine learning models on satellite image classification tasks. While initially designed for the [SPARK 2021](https://cvi2.uni.lu/spark-2021-dataset/) space object detection dataset, its architecture allows it to be adapted for any computer vision classification task.
 
+Please see [RESULTS.md](./RESULTS.md) for a breakdown of our experimental results.
+
 ## Overview
 
 The framework implements a complete machine learning pipeline that handles everything from data loading to model evaluation. It was designed with several key principles in mind:
