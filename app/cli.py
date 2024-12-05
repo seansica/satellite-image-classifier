@@ -84,12 +84,6 @@ def create_parser() -> argparse.ArgumentParser:
         default="INFO",
         help="Set the logging level (default: INFO)"
     )
-
-    parser.add_argument(
-        "--tune-hyperparameters",
-        action="store_true",
-        help="Enable hyperparameter tuning for models."
-    )
     
     parser.add_argument(
         "--param-grids",
@@ -134,7 +128,6 @@ def main() -> None:
             test_size=args.test_size,
             target_size=tuple(args.image_size),
             random_seed=args.random_seed,
-            tune_hyperparameters=args.tune_hyperparameters,
             param_grids=param_grids,
         )
 

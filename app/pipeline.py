@@ -31,7 +31,6 @@ class PipelineConfig:
     target_size: tuple[int, int] = (128, 128)
     random_seed: int = 42
     param_grids: Optional[dict] = None
-    tune_hyperparameters: bool = False
 
 class Pipeline:
     """Main pipeline for satellite image classification.
@@ -93,7 +92,7 @@ class Pipeline:
             print(f"\nProcessing model: {model.name}")
 
             # Check for grid search 
-            if self.config.tune_hyperparameters and self.config.param_grids:
+            if self.config.param_grids:
                 param_grid = self.config.param_grids.get(model.name, {})
 
                 if param_grid:
