@@ -1,9 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
-import numpy as np
+from typing import Any, Dict, List, Optional
 
-from ..core.types import FeatureArray, LabelArray
+import numpy as np
+from sklearn.model_selection import GridSearchCV
+
 from ..core.base import RegistryMixin
+from ..core.types import FeatureArray, LabelArray
+
 
 class Model(RegistryMixin, ABC):
     """Base class for all classification models."""
@@ -42,3 +45,28 @@ class Model(RegistryMixin, ABC):
     def get_params(self) -> Dict[str, Any]:
         """Get the parameters used by this model."""
         return self.params.copy()
+    
+    def tune_hyperparameters(
+        self,
+        X: FeatureArray,
+        y: LabelArray,
+        param_grid: Dict[str, List[Any]],
+        cv: int = 5,
+        scoring: str = "accuracy",
+        n_jobs: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Tune SVM hyperparameters using GridSearchCV.
+        """
+        grid_search = GridSearchCV(
+            estimator=self._model,
+            param_grid=param_grid,
+            cv=cv,
+            scoring=scoring,
+            n_jobs=n_jobs
+        )
+        grid_search.fit(X, y)
+        self.params.update(grid_search.best_params_)
+        self._model.set_params(**grid_search.best_params_)
+        
+        return grid_search
