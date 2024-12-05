@@ -85,6 +85,13 @@ class Pipeline:
             random_state=self.config.random_seed
         )
         print(f"Train set size: {len(X_train)}, Test set size: {len(X_test)}")
+
+        # Load parameter grids if provided
+        param_grids = None
+        if self.config.param_grids:
+            import json
+            with open(self.config.param_grids, 'r') as f:
+                param_grids = json.load(f)
         
         # Train and evaluate models
         results = []
@@ -92,8 +99,8 @@ class Pipeline:
             print(f"\nProcessing model: {model.name}")
 
             # Check for grid search 
-            if self.config.param_grids:
-                param_grid = self.config.param_grids.get(model.name, {})
+            if param_grids:
+                param_grid = param_grids.get(model.name, {})
 
                 if param_grid:
                     print("Tuning hyperparameters...")

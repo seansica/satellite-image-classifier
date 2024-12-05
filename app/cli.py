@@ -109,14 +109,6 @@ def main() -> None:
         
         # Initialize selected models
         models = [get_model(name) for name in args.models]
-        
-
-        # Load parameter grids if provided
-        param_grids = None
-        if args.param_grids:
-            import json
-            with open(args.param_grids, 'r') as f:
-                param_grids = json.load(f)
 
         # Create pipeline configuration
         config = PipelineConfig(
@@ -128,7 +120,7 @@ def main() -> None:
             test_size=args.test_size,
             target_size=tuple(args.image_size),
             random_seed=args.random_seed,
-            param_grids=param_grids,
+            param_grids=args.param_grids,
         )
 
         # Create and run pipeline
