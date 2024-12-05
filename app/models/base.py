@@ -56,7 +56,7 @@ class Model(RegistryMixin, ABC):
         n_jobs: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Tune SVM hyperparameters using GridSearchCV.
+        Tune Sklearn model hyperparameters using GridSearchCV.
         """
         grid_search = GridSearchCV(
             estimator=self._model,
