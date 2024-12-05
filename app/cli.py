@@ -123,7 +123,6 @@ def main() -> None:
             import json
             with open(args.param_grids, 'r') as f:
                 param_grids = json.load(f)
-        print(param_grids)
 
         # Create pipeline configuration
         config = PipelineConfig(
