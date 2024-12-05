@@ -14,6 +14,7 @@ from ..models.base import Model
 
 def evaluate_model(
     model: Model,
+    model_name: str,
     X_test: np.ndarray,
     y_test: LabelArray,
     class_names: List[str],
@@ -71,7 +72,7 @@ def evaluate_model(
         }
     
     return EvaluationResult(
-        model_name=model.name,
+        model_name=model_name,
         accuracy=accuracy,
         precision=precision,
         recall=recall,

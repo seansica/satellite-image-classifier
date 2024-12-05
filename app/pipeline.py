@@ -114,31 +114,42 @@ class Pipeline:
 
                     # Save results
                     self._save_grid_search_results(gs_results.cv_results_, model.name)
+
+                    # Use the trained best estimator for evaluation
+                    tuned_model = gs_results.best_estimator_
                 else:
                     print(f"No Grid Search Parameters given for {model.name}")
 
-            print(f"\nTraining {model.name}...")
-            
-            # Train the model
-            start_time = time.time()
-            model.fit(X_train, y_train)
-            training_time = time.time() - start_time
-            
+            # -1 for grid searched models
+            training_time = -1 
+
+            # Use either tuned_model or the original model
+            if tuned_model:
+                print(f"Evaluating {model.name} (best estimator)...")
+                eval_model = tuned_model
+            else:
+                print(f"\nTraining {model.name}...")
+                start_time = time.time()
+                model.fit(X_train, y_train)
+                training_time = time.time() - start_time
+                eval_model = model
+                print(f"Training time: {training_time:.2f}s")
+
             # Evaluate the model
-            print(f"Evaluating {model.name}...")
             result = evaluate_model(
-                model,
+                eval_model,
+                model.name,
                 X_test,
                 y_test,
                 dataset.class_names,
                 training_time
             )
-            
+
             # Save evaluation results
             self._save_results(result, dataset.class_names)
-            
+
             results.append(result)
-            
+
             print(f"{model.name} Results:")
             print(f"Accuracy:  {result.accuracy:.4f}")
             print(f"Precision: {result.precision:.4f}")
