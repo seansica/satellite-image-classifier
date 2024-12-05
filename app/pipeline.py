@@ -92,17 +92,22 @@ class Pipeline:
         for model in self.config.models:
             print(f"\nProcessing model: {model.name}")
 
+            # Check for grid search 
             if self.config.tune_hyperparameters and self.config.param_grids:
                 param_grid = self.config.param_grids.get(model.name, {})
+
                 if param_grid:
                     print("Tuning hyperparameters...")
-                    if param_grid:
-                        gs_results = model.tune_hyperparameters(
-                            X_train, y_train, param_grid
-                        )
-                        print("Done Grid Search")
-                        print(f"Best parameters for {model.name}: {gs_results.best_params_}")
-                        self._save_grid_search_results(gs_results.cv_results_, model.name)
+                    
+                    # Start grid search
+                    gs_results = model.tune_hyperparameters(
+                        X_train, y_train, param_grid
+                    )
+                    print("Done Grid Search")
+                    print(f"Best parameters for {model.name}: {gs_results.best_params_}")
+
+                    # Save results
+                    self._save_grid_search_results(gs_results.cv_results_, model.name)
                 else:
                     print(f"No Grid Search Parameters given for {model.name}")
 
