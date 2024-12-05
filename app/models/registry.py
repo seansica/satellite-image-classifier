@@ -2,7 +2,7 @@ from typing import List, Type, Dict
 from .base import Model
 
 # Import implementations to ensure decorators are executed
-from . import svm, logistic  # This ensures all implementations are registered
+from . import svm, logistic, gbm, rf  # This ensures all implementations are registered
 
 def get_model(name: str, **kwargs) -> Model:
     """Get a model instance by name.
