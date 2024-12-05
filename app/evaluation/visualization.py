@@ -167,6 +167,11 @@ def plot_grid_search_results(results, model_name, output_path):
         plot_grid_search_svm(results, model_name, output_path)
     if model_name == "LogisticRegression":
         plot_grid_search_lgr(results, model_name, output_path)
+    else:
+        print(f"{model_name} visualization not implemented yet")
+
+
+
 
 def plot_grid_search_svm(results, model_name, output_path) -> None:
     """
