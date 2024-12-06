@@ -17,7 +17,8 @@ def evaluate_model(
     X_test: np.ndarray,
     y_test: LabelArray,
     class_names: List[str],
-    training_time: float
+    training_time: float,
+    data_set_type: str,
 ) -> EvaluationResult:
     """Evaluate a trained model and compute all metrics.
     
@@ -71,7 +72,7 @@ def evaluate_model(
         }
     
     return EvaluationResult(
-        model_name=model.name,
+        model_name=model.name + "_" + data_set_type,
         accuracy=accuracy,
         precision=precision,
         recall=recall,

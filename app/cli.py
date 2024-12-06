@@ -53,6 +53,13 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         help="Number of samples to use per class (default: use all available)"
     )
+
+    parser.add_argument(
+        "--valid-size",
+        type=float,
+        default=0.2,
+        help="Proportion of data to use for validation (default: 0.2)"
+    )
     
     parser.add_argument(
         "--test-size",
@@ -110,6 +117,7 @@ def main() -> None:
             feature_extractor=feature_extractor,
             models=models,
             samples_per_class=args.samples_per_class,
+            valid_size = args.valid_size,
             test_size=args.test_size,
             target_size=tuple(args.image_size),
             random_seed=args.random_seed

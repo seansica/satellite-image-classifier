@@ -25,6 +25,7 @@ class PipelineConfig:
     feature_extractor: FeatureExtractor
     models: List[Model]
     samples_per_class: Optional[int] = None
+    valid_size: float = 0.2
     test_size: float = 0.2
     target_size: tuple[int, int] = (128, 128)
     random_seed: int = 42
@@ -75,13 +76,21 @@ class Pipeline:
         
         # Split data
         print("\nSplitting data into train/test sets...")
-        X_train, X_test, y_train, y_test = create_train_test_split(
+        X_train, X_rem, y_train, y_rem = create_train_test_split(
             features,
             labels,
-            test_size=self.config.test_size,
+            test_size=self.config.test_size + self.config.valid_size,
             random_state=self.config.random_seed
         )
-        print(f"Train set size: {len(X_train)}, Test set size: {len(X_test)}")
+
+        X_valid, X_test, y_valid, y_test = create_train_test_split(
+            X_rem,
+            y_rem,
+            test_size=self.config.test_size / (self.config.test_size + self.config.valid_size),
+            random_state=self.config.random_seed
+        )
+
+        print(f"Train set size: {len(X_train)}, Valid set size: {len(X_valid)}, Test set size: {len(X_test)}")
         
         # Train and evaluate models
         results = []
@@ -94,25 +103,68 @@ class Pipeline:
             training_time = time.time() - start_time
             
             # Evaluate the model
-            print(f"Evaluating {model.name}...")
-            result = evaluate_model(
+            print(f"Evaluating {model.name} train metrics...")
+            train_result = evaluate_model(
+                model,
+                X_train,
+                y_train,
+                dataset.class_names,
+                training_time,
+                'train'
+            )
+
+            # Save evaluation results
+            self._save_results(train_result, dataset.class_names)
+
+            results.append(train_result)
+
+            print(f"{model.name} Train Results:")
+            print(f"Train Accuracy:  {train_result.accuracy:.4f}")
+            print(f"Train Precision: {train_result.precision:.4f}")
+            print(f"Train Recall:    {train_result.recall:.4f}")
+            print(f"Train F1 Score:  {train_result.f1_score:.4f}")
+            
+            print(f"Evaluating {model.name} valid metrics...")
+            valid_result = evaluate_model(
+                model,
+                X_valid,
+                y_valid,
+                dataset.class_names,
+                training_time,
+                'valid'
+            )
+
+            # Save evaluation results
+            self._save_results(valid_result, dataset.class_names)
+
+            results.append(valid_result)
+
+            print(f"{model.name} Valid Results:")
+            print(f"Valid Accuracy:  {valid_result.accuracy:.4f}")
+            print(f"Valid Precision: {valid_result.precision:.4f}")
+            print(f"Valid Recall:    {valid_result.recall:.4f}")
+            print(f"Valid F1 Score:  {valid_result.f1_score:.4f}")
+
+            print(f"Evaluating {model.name} train metrics...")
+            test_result = evaluate_model(
                 model,
                 X_test,
                 y_test,
                 dataset.class_names,
-                training_time
+                training_time,
+                'test'
             )
-            
+
             # Save evaluation results
-            self._save_results(result, dataset.class_names)
+            self._save_results(test_result, dataset.class_names)
+
+            results.append(test_result)
             
-            results.append(result)
-            
-            print(f"{model.name} Results:")
-            print(f"Accuracy:  {result.accuracy:.4f}")
-            print(f"Precision: {result.precision:.4f}")
-            print(f"Recall:    {result.recall:.4f}")
-            print(f"F1 Score:  {result.f1_score:.4f}")
+            print(f"{model.name} Test Results:")
+            print(f"Test Accuracy:  {test_result.accuracy:.4f}")
+            print(f"Test Precision: {test_result.precision:.4f}")
+            print(f"Test Recall:    {test_result.recall:.4f}")
+            print(f"Test F1 Score:  {test_result.f1_score:.4f}")
         
         return results
     
