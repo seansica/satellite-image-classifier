@@ -107,6 +107,7 @@ class Pipeline:
             print(f"\nProcessing model: {model.name}")
 
             training_time = -1.0
+            tuned_model = None
             # Check for grid search 
             if param_grids:
                 param_grid = param_grids.get(model.name, {})
