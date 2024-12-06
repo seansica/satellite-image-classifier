@@ -1,14 +1,15 @@
 # app/satellite_classifier/cli.py
 import argparse
-from pathlib import Path
 import logging
 import sys
+from pathlib import Path
 from typing import List
 
 from .features.registry import get_feature_extractor, list_feature_extractors
 from .models.registry import get_model, list_models
 from .pipeline import Pipeline, PipelineConfig
 from .utils.logging import setup_logging
+
 
 def create_parser() -> argparse.ArgumentParser:
     """Create and configure the argument parser."""
@@ -84,6 +85,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="Set the logging level (default: INFO)"
     )
     
+    parser.add_argument(
+        "--param-grids",
+        type=str,
+        help="Path to JSON file specifying parameter grids for each model."
+    )
+    
     return parser
 
 def main() -> None:
@@ -102,7 +109,7 @@ def main() -> None:
         
         # Initialize selected models
         models = [get_model(name) for name in args.models]
-        
+
         # Create pipeline configuration
         config = PipelineConfig(
             data_path=args.data_path,
@@ -112,9 +119,10 @@ def main() -> None:
             samples_per_class=args.samples_per_class,
             test_size=args.test_size,
             target_size=tuple(args.image_size),
-            random_seed=args.random_seed
+            random_seed=args.random_seed,
+            param_grids=args.param_grids,
         )
-        
+
         # Create and run pipeline
         pipeline = Pipeline(config)
         results = pipeline.run()

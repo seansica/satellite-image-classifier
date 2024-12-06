@@ -2,8 +2,10 @@ from pathlib import Path
 from typing import Dict, List
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
 from itertools import cycle
+import os
 
 from ..core.base import EvaluationResult
 
@@ -131,3 +133,103 @@ def save_metrics_summary(
         f.write("ROC AUC Scores:\n")
         for class_name, curves in result.roc_curves.items():
             f.write(f"{class_name}: {curves['auc']:.4f}\n")
+
+
+def save_grid_search_results(results, model_name: str, output_path: Path) -> None:
+    """
+    Save the grid search results to a CSV file in the specified output path.
+    If the output directory does not exist, it will be created.
+
+    Args:
+        results (dict): Dictionary containing grid search results
+        model_name (str): Name of the model used in grid search
+        output_path (Path): Path where the results will be saved
+    """
+    # Ensure the directory exists
+    output_path.mkdir(parents=True, exist_ok=True)  # Create directories if they don't exist
+    summary_path = output_path / f"{model_name}_grid_search_results.csv"
+    # Convert grid search results to a pandas DataFrame
+    grid_results = pd.DataFrame(results)
+    # Save the results to a CSV file
+    grid_results.to_csv(summary_path, index=False)
+    print(f"Grid search results saved to: {summary_path}")
+
+def plot_grid_search_results(results, model_name, output_path):
+    """
+    Plot grid search results for different models.
+
+    Args:
+        results (dict): Dictionary containing grid search results
+        model_name (str): Name of the model (SVM or LogisticRegression)
+        output_path (Path): Path where the plot will be saved
+    """
+    if model_name == "SVM":
+        plot_grid_search_svm(results, model_name, output_path)
+    if model_name == "LogisticRegression":
+        plot_grid_search_lgr(results, model_name, output_path)
+    else:
+        print(f"{model_name} visualization not implemented yet")
+
+
+
+
+def plot_grid_search_svm(results, model_name, output_path) -> None:
+    """
+    Plot grid search results for Support Vector Machine (SVM).
+
+    Args:
+        results (dict): Dictionary containing grid search results
+        model_name (str): Name of the model (SVM)
+        output_path (Path): Path where the plot will be saved
+    """
+    # Extract scores
+    scores = results['mean_test_score']
+    Cs = [param['C'] for param in results['params']]
+    kernels = [param['kernel'] for param in results['params']]
+    # Create a 2D grid for visualization
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for kernel in ['linear', 'rbf', 'poly']:
+        kernel_scores = [scores[i] for i in range(len(scores)) if kernels[i] == kernel]
+        kernel_Cs = [Cs[i] for i in range(len(scores)) if kernels[i] == kernel]
+        ax.plot(kernel_Cs, kernel_scores, marker='o', label=f'Kernel: {kernel}')
+        ax.set_xscale('log')  # Log scale for C
+        ax.set_xlabel('C (Regularization Parameter)', fontsize=12)
+        ax.set_ylabel('Mean Accuracy (CV)', fontsize=12)
+        ax.set_title('SVM Performance with Different Kernels and C Values', fontsize=14)
+        ax.legend()
+        plt.grid()
+    # Save the plot
+    plot_path = output_path / f"{model_name}_grid_search_plot.png"
+    plt.savefig(plot_path)
+
+def plot_grid_search_lgr(results, model_name, output_path) -> None:
+    """
+    Plot grid search results for Logistic Regression.
+
+    Args:
+        results (dict): Dictionary containing grid search results
+        model_name (str): Name of the model (LogisticRegression)
+        output_path (Path): Path where the plot will be saved
+    """
+    # Extract scores, C values, and penalty types
+    scores = results['mean_test_score']
+    Cs = [param['C'] for param in results['params']]
+    penalties = [param['solver'] for param in results['params']]
+    # Create a 2D grid for visualization
+    fig, ax = plt.subplots(figsize=(10, 6))
+    # Plot for each penalty type (L1, L2)
+    for penalty in  ["lbfgs", "sag"]:
+        penalty_scores = [scores[i] for i in range(len(scores)) if penalties[i] == penalty]
+        penalty_Cs = [Cs[i] for i in range(len(scores)) if penalties[i] == penalty]
+        # Plot the results for the current penalty type
+        ax.plot(penalty_Cs, penalty_scores, marker='o', label=f'solver: {penalty}')
+        # Set the x-axis to a logarithmic scale for better visualization of C
+        ax.set_xscale('log')
+        ax.set_xlabel('C (Regularization Parameter)', fontsize=12)
+        ax.set_ylabel('Mean Accuracy (CV)', fontsize=12)
+        ax.set_title(f'{model_name} Performance with Different Penalties and C Values', fontsize=14)
+        ax.legend()
+        plt.grid()
+    # Save the plot
+    plot_path = output_path / f"{model_name}_logreg_grid_search_plot.png"
+    plt.savefig(plot_path)
