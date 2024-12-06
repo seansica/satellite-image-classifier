@@ -214,15 +214,15 @@ def plot_grid_search_lgr(results, model_name, output_path) -> None:
     # Extract scores, C values, and penalty types
     scores = results['mean_test_score']
     Cs = [param['C'] for param in results['params']]
-    penalties = [param['penalty'] for param in results['params']]
+    penalties = [param['solver'] for param in results['params']]
     # Create a 2D grid for visualization
     fig, ax = plt.subplots(figsize=(10, 6))
     # Plot for each penalty type (L1, L2)
-    for penalty in ['l2', 'l1']:
+    for penalty in  ["lbfgs", "sag"]:
         penalty_scores = [scores[i] for i in range(len(scores)) if penalties[i] == penalty]
         penalty_Cs = [Cs[i] for i in range(len(scores)) if penalties[i] == penalty]
         # Plot the results for the current penalty type
-        ax.plot(penalty_Cs, penalty_scores, marker='o', label=f'Penalty: {penalty}')
+        ax.plot(penalty_Cs, penalty_scores, marker='o', label=f'solver: {penalty}')
         # Set the x-axis to a logarithmic scale for better visualization of C
         ax.set_xscale('log')
         ax.set_xlabel('C (Regularization Parameter)', fontsize=12)

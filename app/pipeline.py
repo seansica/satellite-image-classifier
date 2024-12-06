@@ -98,17 +98,20 @@ class Pipeline:
         for model in self.config.models:
             print(f"\nProcessing model: {model.name}")
 
+            training_time = -1.0
             # Check for grid search 
             if param_grids:
                 param_grid = param_grids.get(model.name, {})
 
                 if param_grid:
                     print("Tuning hyperparameters...")
-                    
+
                     # Start grid search
+                    start_time = time.time()
                     gs_results = model.tune_hyperparameters(
                         X_train, y_train, param_grid
                     )
+                    training_time = time.time() - start_time
                     print("Done Grid Search")
                     print(f"Best parameters for {model.name}: {gs_results.best_params_}")
 
@@ -119,10 +122,7 @@ class Pipeline:
                     tuned_model = gs_results.best_estimator_
                 else:
                     print(f"No Grid Search Parameters given for {model.name}")
-
-            # -1 for grid searched models
-            training_time = -1 
-
+            
             # Use either tuned_model or the original model
             if tuned_model:
                 print(f"Evaluating {model.name} (best estimator)...")
