@@ -1,9 +1,13 @@
+import warnings
 from typing import Optional
-from sklearn.linear_model import LogisticRegression as SKLogisticRegression
-import numpy as np
 
-from .base import Model
+import numpy as np
+from sklearn.linear_model import LogisticRegression as SKLogisticRegression
+
 from ..core.types import FeatureArray, LabelArray
+from .base import Model
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 @Model.register('logistic')
 class LogisticRegressionModel(Model):

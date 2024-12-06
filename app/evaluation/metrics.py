@@ -14,6 +14,7 @@ from ..models.base import Model
 
 def evaluate_model(
     model: Model,
+    model_name: str,
     X_test: np.ndarray,
     y_test: LabelArray,
     class_names: List[str],
