@@ -1,48 +1,35 @@
-from typing import Optional
-from sklearn.linear_model import LogisticRegression as SKLogisticRegression
-import numpy as np
+import torch
+import torch.nn as nn
 
 from .base import Model
-from ..core.types import FeatureArray, LabelArray
+
 
 @Model.register('logistic')
 class LogisticRegressionModel(Model):
-    """Logistic Regression classifier wrapper."""
-    
+    """Logistic Regression classifier."""
+
     def __init__(
-        self,
-        C: float = 1.0,
-        max_iter: int = 1000,
-        class_weight: Optional[str] = 'balanced',
-        random_state: int = 42,
-        **kwargs
+        self, input_dim: int, num_classes: int, learning_rate: float = 0.001, **kwargs
     ):
-        super().__init__(
-            C=C,
-            max_iter=max_iter,
-            class_weight=class_weight,
-            random_state=random_state,
-            **kwargs
-        )
-    
-    def _create_model(self) -> SKLogisticRegression:
-        return SKLogisticRegression(
-            C=self.params['C'],
-            max_iter=self.params['max_iter'],
-            class_weight=self.params['class_weight'],
-            random_state=self.params['random_state'],
-            n_jobs=-1  # Use all available cores
-        )
-    
-    def fit(self, X: FeatureArray, y: LabelArray) -> None:
-        self._model.fit(X, y)
-    
-    def predict(self, X: FeatureArray) -> LabelArray:
-        return self._model.predict(X)
-    
-    def predict_proba(self, X: FeatureArray) -> np.ndarray:
-        return self._model.predict_proba(X)
-    
+        super().__init__(input_dim, num_classes, **kwargs)
+        self.learning_rate = learning_rate
+
+    def build(self) -> None:
+        """Build the logistic regression model."""
+        self.linear = nn.Linear(self.input_dim, self.num_classes)
+
+        # Initialize weights
+        nn.init.xavier_uniform_(self.linear.weight)
+        nn.init.zeros_(self.linear.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the model."""
+        return self.linear(x)
+
+    def get_criterion(self) -> nn.Module:
+        """Get the loss criterion."""
+        return nn.CrossEntropyLoss()
+
     @property
     def name(self) -> str:
         return "LogisticRegression"

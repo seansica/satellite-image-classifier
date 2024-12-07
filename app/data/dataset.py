@@ -1,122 +1,124 @@
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple, Optional
-import numpy as np
-from tqdm import tqdm
-import cv2
+from typing import List, Optional, Sequence, Union
+import torch
+from torch.utils.data import Dataset as TorchDataset
+from PIL import Image
 
-from ..core.base import Dataset, DatasetMetadata
-from ..core.types import ImageArray
-from .preprocessing import preprocess_image
 
-class DatasetLoader:
-    """Handles loading and preprocessing of satellite image datasets.
-    
-    This class manages the entire data loading pipeline, including:
-    - Reading images from disk
-    - Applying preprocessing steps
-    - Creating balanced class distributions
-    - Splitting data into train/test sets
-    """
-    
+@dataclass
+class DatasetMetadata:
+    """Metadata for a dataset."""
+
+    name: str
+    class_names: List[str]
+    n_classes: int
+    n_samples: int
+    data_path: Path
+
+
+class Dataset(TorchDataset):
+    """PyTorch Dataset for satellite image classification with lazy loading."""
+
     def __init__(
         self,
-        data_path: Path,
-        target_size: Tuple[int, int] = (128, 128),
-        samples_per_class: Optional[int] = None,
-        random_seed: int = 42
+        images: Sequence[Union[torch.Tensor, Path]],
+        labels: Sequence[str],
+        metadata: DatasetMetadata,
+        transform: Optional[callable] = None,
     ):
-        self.data_path = Path(data_path)
-        self.target_size = target_size
-        self.samples_per_class = samples_per_class
-        self.random_seed = random_seed
-        
-        # Set random seed for reproducibility
-        np.random.seed(random_seed)
-    
-    def load(self) -> Dataset:
-        """Load the dataset from disk.
-        
-        This method:
-        1. Discovers all image files and their classes
-        2. Loads and preprocesses images
-        3. Creates a balanced dataset if requested
-        4. Returns a Dataset object with all data and metadata
-        
-        Returns:
-            Dataset object containing images and labels
-        """
-        # Get all class directories
-        class_dirs = [d for d in self.data_path.iterdir() if d.is_dir()]
-        class_names = [d.name for d in class_dirs]
-        
-        print(f"Found {len(class_names)} classes: {', '.join(class_names)}")
-        
-        images = []
-        labels = []
-        
-        # Load images for each class
-        for class_dir in tqdm(class_dirs, desc="Loading classes"):
-            # Get all image files for this class
-            image_files = list(class_dir.glob('*.jpg'))
-            
-            # If samples_per_class is set, randomly sample that many images
-            if self.samples_per_class is not None:
-                if len(image_files) > self.samples_per_class:
-                    image_files = np.random.choice(
-                        image_files,
-                        size=self.samples_per_class,
-                        replace=False
-                    ).tolist()
-            
-            # Load and preprocess each image
-            for img_path in tqdm(
-                image_files,
-                desc=f"Loading {class_dir.name}",
-                leave=False
-            ):
-                try:
-                    # Load and preprocess the image
-                    img = load_image(img_path, self.target_size)
-                    img = preprocess_image(img)
-                    
-                    images.append(img)
-                    labels.append(class_dir.name)
-                except Exception as e:
-                    print(f"Error loading {img_path}: {str(e)}")
-        
-        # Create dataset metadata
-        metadata = DatasetMetadata(
-            name=self.data_path.name,
-            class_names=class_names,
-            n_classes=len(class_names),
-            n_samples=len(images),
-            data_path=self.data_path
-        )
-        
-        return Dataset(images, labels, metadata)
+        if len(images) != len(labels):
+            raise ValueError(
+                f"Number of images ({len(images)}) must match number of labels ({len(labels)})"
+            )
 
-def load_image(path: Path, target_size: Tuple[int, int]) -> ImageArray:
-    """Load and resize an image from disk.
-    
-    Args:
-        path: Path to the image file
-        target_size: Desired output size as (width, height)
-        
-    Returns:
-        Preprocessed image as numpy array
-        
-    Raises:
-        ValueError: If the image cannot be loaded
-    """
-    # Read image in BGR format
-    img = cv2.imread(str(path))
-    if img is None:
-        raise ValueError(f"Could not load image at {path}")
-    
-    # Convert BGR to RGB
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    
-    # Resize
-    img = cv2.resize(img, target_size, interpolation=cv2.INTER_CUBIC)
-    
-    return img
+        self.images = images
+        self.labels = labels
+        self.metadata = metadata
+        self.transform = transform
+        self.device = torch.device("cpu")  # Default device
+
+        # Create label encoder
+        self._label_to_idx = {
+            label: idx for idx, label in enumerate(metadata.class_names)
+        }
+        self._idx_to_label = {idx: label for label, idx in self._label_to_idx.items()}
+
+    def __len__(self) -> int:
+        return len(self.images)
+
+    def _load_image(self, image_source: Union[torch.Tensor, Path]) -> torch.Tensor:
+        """Load an image from a path or return the tensor.
+
+        Important: Always returns tensor on CPU, device transfer happens later."""
+        if isinstance(image_source, torch.Tensor):
+            return image_source.cpu()  # Ensure CPU
+        else:
+            # Load image from path
+            with Image.open(image_source) as img:
+                if self.transform:
+                    img_tensor = self.transform(img)
+                else:
+                    # Default transformation if none provided
+                    from torchvision import transforms
+
+                    default_transform = transforms.Compose(
+                        [
+                            transforms.ToTensor(),
+                        ]
+                    )
+                    img_tensor = default_transform(img)
+                return img_tensor.cpu()  # Ensure CPU
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Get a sample from the dataset."""
+        image_source = self.images[idx]
+        label = self.labels[idx]
+
+        # Load image on CPU
+        image = self._load_image(image_source)
+
+        # Convert string label to index and create tensor
+        label_idx = self._label_to_idx[label]
+        label_tensor = torch.tensor(label_idx, dtype=torch.long)
+
+        # Note: We don't move to self.device here - that's handled by DataLoader
+        return image, label_tensor
+
+    def get_label_name(self, idx: int) -> str:
+        return self._idx_to_label[idx]
+
+    @property
+    def class_names(self) -> List[str]:
+        return self.metadata.class_names
+
+    @property
+    def num_classes(self) -> int:
+        return self.metadata.n_classes
+
+    def to(self, device: torch.device) -> "Dataset":
+        """Update the target device for the dataset.
+
+        Note: Actual device transfer happens in DataLoader via pin_memory and device transfer.
+        """
+        self.device = device
+        return self
+
+    def subset(self, indices: Sequence[int]) -> "Dataset":
+        images = [self.images[i] for i in indices]
+        labels = [self.labels[i] for i in indices]
+
+        new_metadata = DatasetMetadata(
+            name=self.metadata.name,
+            class_names=self.metadata.class_names,
+            n_classes=self.metadata.n_classes,
+            n_samples=len(indices),
+            data_path=self.metadata.data_path,
+        )
+
+        return Dataset(
+            images=images,
+            labels=labels,
+            metadata=new_metadata,
+            transform=self.transform,
+        )

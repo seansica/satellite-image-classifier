@@ -1,9 +1,8 @@
 import cv2
 import numpy as np
 from pathlib import Path
-from .base import FeatureExtractor
 import logging
-
+from .base import FeatureExtractor
 
 @FeatureExtractor.register("resnet50")
 class ResNet50FeatureExtractor(FeatureExtractor):
@@ -37,10 +36,6 @@ class ResNet50FeatureExtractor(FeatureExtractor):
             # Load the model using OpenCV's DNN module
             self.model = cv2.dnn.readNetFromONNX(str(model_path))
             logging.info(f"Successfully loaded ResNet50 model from {model_path}")
-
-            # Set computation preferences
-            self.model.setPreferableBackend(cv2.dnn.DNN_BACKEND_DEFAULT)
-            self.model.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
             # Get all layer names
             self.layer_names = self.model.getLayerNames()
