@@ -55,6 +55,35 @@ def create_parser() -> argparse.ArgumentParser:
         help="Models to evaluate (default: all available models)",
     )
 
+    # Add model-specific hyperparameters
+    parser.add_argument(
+        "--rf-n-estimators",
+        type=int,
+        default=10,  # Reduced from 100
+        help="Number of trees in Random Forest (default: 10)",
+    )
+
+    parser.add_argument(
+        "--rf-max-depth",
+        type=int,
+        default=3,  # Reduced from 5
+        help="Maximum depth of trees in Random Forest (default: 3)",
+    )
+
+    parser.add_argument(
+        "--rf-hidden-dim",
+        type=int,
+        default=None,
+        help="Hidden dimension for Random Forest trees (default: input_dim//4 or 10)",
+    )
+
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=32,
+        help="Batch size for training (default: 32)",
+    )
+
     parser.add_argument(
         "--train-ratio",
         type=float,
@@ -174,6 +203,16 @@ def main() -> None:
         # Initialize feature extractor
         feature_extractor = get_feature_extractor(args.feature_extractor)
 
+        # Collect model-specific parameters
+        model_params = {
+            "rf": {  # Parameters for Random Forest
+                "n_estimators": args.rf_n_estimators,
+                "max_depth": args.rf_max_depth,
+                "hidden_dim": args.rf_hidden_dim,
+            }
+            # TODO add other model-specific parameters here
+        }
+
         # Initialize selected models
         models = [get_model(name) for name in args.models]
 
@@ -187,7 +226,9 @@ def main() -> None:
             test_ratio=args.test_ratio,
             target_size=tuple(args.image_size),
             random_seed=args.random_seed,
-            device=device,  # Pass device to pipeline config
+            device=device,
+            batch_size=args.batch_size,
+            model_params=model_params,  # Pass model parameters to config
         )
 
         # Create and run pipeline
@@ -204,7 +245,7 @@ def main() -> None:
                 f"\n  Recall:    {result.recall:.4f}"
                 f"\n  F1 Score:  {result.f1_score:.4f}"
                 f"\n"
-                f"\n  Time To Train: {result.training_time}"
+                f"\n  Time To Train: {result.training_time:.2f}s"
                 f"\n"
             )
 

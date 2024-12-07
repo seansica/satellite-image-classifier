@@ -1,22 +1,26 @@
-# FULL RUN:
+# LOGISTIC REGRESSION
 # python -m app.cli \
 #   --device mps \
-#   --data-path ../ICIP-2021/train_rgb \
-#   --output-path .test_results/hog_224_224_7500 \
+#   --data-path ../ICIP-2021/ \
+#   --output-path .test_results/2024_12_07_hog_logistic_224_224_ratio_01 \
 #   --feature-extractor hog \
-#   --models svm logistic rf gbm \
-#   --samples-per-class 7500 \
+#   --models logistic \
+#   --train-ratio 0.05 \
+#   --test-ratio 0.1 \
 #   --image-size 224 224 \
 #   --log-level DEBUG
 
-# TEST RUN:
+# RANDOM FOREST
 python -m app.cli \
   --device mps \
   --data-path ../ICIP-2021/ \
-  --output-path .test_results/2024_12_06_hog_224_224_1000 \
+  --output-path .test_results/2024_12_07_hog_rf_224_224_ratio_01 \
   --feature-extractor hog \
-  --models svm \
-  --train-ratio 0.1 \
+  --models rf \
+  --train-ratio 0.05 \
   --test-ratio 0.1 \
   --image-size 224 224 \
-  --log-level DEBUG
+  --log-level DEBUG \
+  --rf-n-estimators 5 \
+  --rf-max-depth 2 \
+  --rf-hidden-dim 32 \

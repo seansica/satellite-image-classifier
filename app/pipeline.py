@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import time
 from typing import List, Optional, Tuple, Union
@@ -39,6 +39,9 @@ class PipelineConfig:
     learning_rate: float = 0.001
     epochs: int = 1
     patience: int = 10
+
+    # Model-specific parameters
+    model_params: dict = field(default_factory=dict)  # Store model-specific parameters
 
 
 class Pipeline:
@@ -83,7 +86,9 @@ class Pipeline:
         for model_wrapper in self.config.models:
             # Initialize model with correct dimensions
             model = model_wrapper.create(
-                input_dim=input_dim, num_classes=len(train_dataset.class_names)
+                input_dim=input_dim,
+                num_classes=len(train_dataset.class_names),
+                model_params=self.config.model_params,
             ).to(self.config.device)
 
             print(f"\nTraining {model.name}...")
@@ -154,8 +159,10 @@ class Pipeline:
                 inputs = inputs.to(self.config.device)
                 targets = targets.to(self.config.device)
 
-                # Extract features
+                # Extract features and ensure they require gradients
                 features = self.config.feature_extractor.extract(inputs)
+                if not features.requires_grad:
+                    features = features.detach().requires_grad_(True)
 
                 # Training step
                 loss = model.train_step((features, targets), optimizer)
