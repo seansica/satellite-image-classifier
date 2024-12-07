@@ -21,6 +21,10 @@ class HingeLoss(nn.Module):
         Returns:
             torch.Tensor: Average hinge loss
         """
+        # Ensure output is properly shaped
+        if len(output.shape) != 2:
+            raise ValueError(f"Expected output shape (N, C), got {output.shape}")
+
         # Get correct class scores
         target_scores = output[torch.arange(output.size(0)), target]
 
@@ -37,7 +41,7 @@ class HingeLoss(nn.Module):
 @Model.register('svm')
 class SVMModel(Model):
     def __init__(self, input_dim: int, num_classes: int, margin: float = 1.0, **kwargs):
-        self.margin = margin
+        self._margin = margin  # Store before super().__init__
         super().__init__(input_dim, num_classes, **kwargs)
 
     def build(self) -> None:
@@ -49,12 +53,23 @@ class SVMModel(Model):
         nn.init.zeros_(self.linear.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the SVM."""
+        """Forward pass of the SVM.
+
+        Args:
+            x: Input tensor of shape (batch_size, input_dim)
+
+        Returns:
+            Tensor of shape (batch_size, num_classes)
+        """
+        # Ensure input is properly shaped
+        if len(x.shape) != 2:
+            x = x.flatten(1)
+
         return self.linear(x)
 
     def get_criterion(self) -> nn.Module:
         """Get the hinge loss criterion."""
-        return HingeLoss(margin=self.margin)
+        return HingeLoss(margin=self._margin)
 
     @property
     def name(self) -> str:
