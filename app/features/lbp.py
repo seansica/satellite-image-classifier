@@ -5,66 +5,42 @@ import torch.nn.functional as F
 from .base import FeatureExtractor
 
 
-class LBPLayer(nn.Module):
-    """PyTorch implementation of Local Binary Pattern feature extraction."""
+def compute_lbp(x: torch.Tensor) -> torch.Tensor:
+    """Compute LBP codes using PyTorch operations.
 
-    def __init__(self, n_points: int = 24, radius: int = 3):
-        super().__init__()
-        self.n_points = n_points
-        self.radius = radius
+    Args:
+        x: Input tensor of shape (B, 1, H, W)
 
-        # Precompute sampling coordinates
-        angles = torch.arange(0, 2 * torch.pi, 2 * torch.pi / n_points)
-        self.register_buffer("sample_x", radius * torch.cos(angles))
-        self.register_buffer("sample_y", radius * torch.sin(angles))
+    Returns:
+        LBP codes of shape (B, 1, H-2, W-2)
+    """
+    # Pad image for 3x3 mask size
+    x = F.pad(x, pad=[1, 1, 1, 1], mode="reflect")
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Compute LBP features.
+    # Get shape
+    B, C, M, N = x.shape
 
-        Args:
-            x: Input tensor of shape (B, 1, H, W)
+    # Select elements within 3x3 mask
+    y00 = x[:, :, 0 : M - 2, 0 : N - 2]
+    y01 = x[:, :, 0 : M - 2, 1 : N - 1]
+    y02 = x[:, :, 0 : M - 2, 2:N]
+    y10 = x[:, :, 1 : M - 1, 0 : N - 2]
+    y11 = x[:, :, 1 : M - 1, 1 : N - 1]  # Center pixel
+    y12 = x[:, :, 1 : M - 1, 2:N]
+    y20 = x[:, :, 2:M, 0 : N - 2]
+    y21 = x[:, :, 2:M, 1 : N - 1]
+    y22 = x[:, :, 2:M, 2:N]
 
-        Returns:
-            LBP codes of shape (B, 1, H, W)
-        """
-        # Get dimensions
-        B, _, H, W = x.shape
-        device = x.device
+    # Compute LBP code
+    code = torch.zeros_like(y11)
+    powers = torch.tensor([1, 2, 4, 8, 16, 32, 64, 128], device=x.device)
 
-        # Create sampling grid
-        xx, yy = torch.meshgrid(
-            torch.arange(H, device=device),
-            torch.arange(W, device=device),
-            indexing="ij",
-        )
+    # Compare with neighbors and compute binary code
+    neighbors = [y01, y02, y12, y22, y21, y20, y10, y00]
+    for bit, neighbor in enumerate(neighbors):
+        code = code + (neighbor >= y11).float() * powers[bit]
 
-        # Initialize LBP codes
-        lbp = torch.zeros((B, 1, H, W), device=device)
-
-        # For each sampling point
-        for i in range(self.n_points):
-            # Calculate sampling coordinates
-            sample_x = xx + self.sample_x[i]
-            sample_y = yy + self.sample_y[i]
-
-            # Grid sample requires coordinates in [-1, 1]
-            grid_x = (2.0 * sample_x / (W - 1)) - 1.0
-            grid_y = (2.0 * sample_y / (H - 1)) - 1.0
-            grid = torch.stack([grid_x, grid_y], dim=-1)
-            grid = grid.expand(B, -1, -1, -1)
-
-            # Sample values
-            sampled = F.grid_sample(
-                x, grid, mode="bilinear", padding_mode="border", align_corners=True
-            )
-
-            # Compare with center pixel
-            bit = (sampled >= x).float()
-
-            # Add to LBP code
-            lbp = lbp + (bit * (2**i))
-
-        return lbp
+    return code
 
 
 @FeatureExtractor.register("lbp")
@@ -73,25 +49,16 @@ class LBPFeatureExtractor(FeatureExtractor):
 
     def __init__(
         self,
-        n_points: int = 24,  # Number of points in the circular pattern
-        radius: int = 3,  # Radius of the circular pattern
         grid_x: int = 4,  # Number of grid cells in x direction
         grid_y: int = 4,  # Number of grid cells in y direction
+        n_bins: int = 256,  # Number of histogram bins (2^8 for standard LBP)
         **kwargs
     ):
-        super().__init__(
-            n_points=n_points, radius=radius, grid_x=grid_x, grid_y=grid_y, **kwargs
-        )
-
-        self.lbp_layer = LBPLayer(n_points=n_points, radius=radius)
+        super().__init__(grid_x=grid_x, grid_y=grid_y, n_bins=n_bins, **kwargs)
         self.grid_x = grid_x
         self.grid_y = grid_y
-
-        # Number of histogram bins for uniform LBP
-        self.n_bins = n_points + 2
-
-        # Calculate output dimension
-        self._output_dim = self.n_bins * grid_x * grid_y
+        self.n_bins = n_bins
+        self._output_dim = n_bins * grid_x * grid_y
 
     def compute_grid_histograms(self, lbp_codes: torch.Tensor) -> torch.Tensor:
         """Compute histograms for grid cells.
@@ -102,16 +69,19 @@ class LBPFeatureExtractor(FeatureExtractor):
         Returns:
             Grid cell histograms of shape (B, grid_y * grid_x * n_bins)
         """
-        B, _, H, W = lbp_codes.shape
+        B, C, H, W = lbp_codes.shape
+        device = lbp_codes.device
 
-        # Compute cell dimensions
+        # Calculate grid cell sizes
         cell_h = H // self.grid_y
         cell_w = W // self.grid_x
 
-        # Initialize histograms
-        histograms = []
+        # Initialize output tensor
+        features = torch.zeros(
+            B, self.grid_y * self.grid_x * self.n_bins, device=device
+        )
 
-        # For each grid cell
+        # Process each grid cell
         for i in range(self.grid_y):
             for j in range(self.grid_x):
                 # Extract cell
@@ -119,15 +89,21 @@ class LBPFeatureExtractor(FeatureExtractor):
                     :, :, i * cell_h : (i + 1) * cell_h, j * cell_w : (j + 1) * cell_w
                 ]
 
-                # Compute histogram
-                hist = torch.histc(
-                    cell.float(), bins=self.n_bins, min=0, max=self.n_bins - 1
-                )
-                hist = hist / hist.sum().clamp(min=1e-8)  # Normalize
-                histograms.append(hist)
+                # Compute histogram for each batch item
+                for b in range(B):
+                    # Use bincount for histogram
+                    hist = torch.bincount(
+                        cell[b].flatten().long(), minlength=self.n_bins
+                    ).float()
 
-        # Concatenate all histograms
-        return torch.cat(histograms, dim=0)
+                    # Normalize
+                    hist = hist / hist.sum().clamp(min=1e-8)
+
+                    # Store in output tensor
+                    start_idx = (i * self.grid_x + j) * self.n_bins
+                    features[b, start_idx : start_idx + self.n_bins] = hist
+
+        return features
 
     def extract(self, images: torch.Tensor) -> torch.Tensor:
         """Extract LBP features from a batch of images.
@@ -136,7 +112,7 @@ class LBPFeatureExtractor(FeatureExtractor):
             images: Tensor of shape (B, C, H, W)
 
         Returns:
-            LBP features of shape (B, grid_y * grid_x * n_bins)
+            LBP features of shape (B, output_dim)
         """
         # Convert to grayscale if needed
         if images.size(1) > 1:
@@ -145,11 +121,8 @@ class LBPFeatureExtractor(FeatureExtractor):
         else:
             gray = images
 
-        # Move LBP layer to correct device if needed
-        self.lbp_layer = self.lbp_layer.to(self.device)
-
         # Compute LBP codes
-        lbp_codes = self.lbp_layer(gray)
+        lbp_codes = compute_lbp(gray)
 
         # Compute grid cell histograms
         features = self.compute_grid_histograms(lbp_codes)
@@ -158,7 +131,6 @@ class LBPFeatureExtractor(FeatureExtractor):
 
     @property
     def output_dim(self) -> int:
-        """Get the output feature dimension."""
         return self._output_dim
 
     @property
