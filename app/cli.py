@@ -56,10 +56,17 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--samples-per-class",
-        type=str,
-        default="max",
-        help="Number of samples to use per class ('max' for all available)",
+        "--train-ratio",
+        type=float,
+        default=1.0,
+        help="Ratio of training data to use (between 0 and 1, default: 1.0)",
+    )
+
+    parser.add_argument(
+        "--test-ratio",
+        type=float,
+        default=1.0,
+        help="Ratio of test data to use (between 0 and 1, default: 1.0)",
     )
 
     parser.add_argument(
@@ -148,20 +155,17 @@ def main() -> None:
     setup_logging(level=args.log_level)
     logger = logging.getLogger(__name__)
 
-    # Convert samples_per_class if not 'max'
-    if args.samples_per_class != "max":
-        try:
-            args.samples_per_class = int(args.samples_per_class)
-            if args.samples_per_class <= 0:
-                raise ValueError
-        except ValueError:
-            parser.error("--samples-per-class must be 'max' or a positive integer")
-
     # Set random seeds for reproducibility
     torch.manual_seed(args.random_seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(args.random_seed)
         torch.cuda.manual_seed_all(args.random_seed)
+
+    # Validate ratios
+    if not 0 < args.train_ratio <= 1:
+        parser.error("--train-ratio must be between 0 and 1")
+    if not 0 < args.test_ratio <= 1:
+        parser.error("--test-ratio must be between 0 and 1")
 
     try:
         # Get compute device
@@ -179,7 +183,8 @@ def main() -> None:
             output_path=args.output_path,
             feature_extractor=feature_extractor,
             models=models,
-            samples_per_class=args.samples_per_class,
+            train_ratio=args.train_ratio,
+            test_ratio=args.test_ratio,
             target_size=tuple(args.image_size),
             random_seed=args.random_seed,
             device=device,  # Pass device to pipeline config
@@ -193,11 +198,14 @@ def main() -> None:
         logger.info("\nClassification Results Summary:")
         for result in results:
             logger.info(
-                f"\n{result.model_name}:"
+                f"\n{result.model_name} ({result.dataset_split}):"
                 f"\n  Accuracy:  {result.accuracy:.4f}"
                 f"\n  Precision: {result.precision:.4f}"
                 f"\n  Recall:    {result.recall:.4f}"
                 f"\n  F1 Score:  {result.f1_score:.4f}"
+                f"\n"
+                f"\n  Time To Train: {result.training_time}"
+                f"\n"
             )
 
         logger.info("\nEvaluation completed successfully. "

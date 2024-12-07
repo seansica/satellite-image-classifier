@@ -21,7 +21,7 @@ def evaluate_model(
     dataset_split: str = "test",
     X_test: Optional[np.ndarray] = None,
     y_test: Optional[Union[np.ndarray, torch.Tensor]] = None,
-    features: Optional[torch.Tensor] = None,  # Changed from predictions to features
+    features: Optional[torch.Tensor] = None,
     labels: Optional[torch.Tensor] = None,
 ) -> EvaluationResult:
     """Evaluate a trained model and compute all metrics."""
@@ -61,7 +61,7 @@ def evaluate_model(
     # Calculate basic metrics
     accuracy = accuracy_score(y_true, y_pred)
     precision, recall, f1, _ = precision_recall_fscore_support(
-        y_true, y_pred, average="weighted"
+        y_true, y_pred, average="weighted", zero_division=0
     )
 
     # Calculate confusion matrix

@@ -16,6 +16,7 @@ python -m app.cli \
   --output-path .test_results/2024_12_06_hog_224_224_1000 \
   --feature-extractor hog \
   --models svm \
-  --samples-per-class 100 \
+  --train-ratio 0.1 \
+  --test-ratio 0.1 \
   --image-size 224 224 \
   --log-level DEBUG

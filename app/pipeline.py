@@ -30,7 +30,8 @@ class PipelineConfig:
     feature_extractor: FeatureExtractor
     models: List["LazyModel"]
     device: torch.device
-    samples_per_class: Optional[Union[int, str]] = None
+    train_ratio: float = 1.0
+    test_ratio: float = 1.0
     target_size: tuple[int, int] = (128, 128)
     random_seed: int = 42
     batch_size: int = 32
@@ -104,18 +105,14 @@ class Pipeline:
 
                 result = evaluate_model(
                     model=model,
-                    predictions=predictions,
-                    labels=labels,
                     class_names=train_dataset.class_names,
                     training_time=training_time,
                     dataset_split=split_name,
+                    features=predictions,
+                    labels=labels,
                 )
                 self._save_results(result, train_dataset.class_names)
                 results.append(result)
-
-                print(f"{model.name} {split_name} Results:")
-                print(f"Accuracy: {result.accuracy:.4f}")
-                print(f"F1 Score: {result.f1_score:.4f}")
 
         return results
 
@@ -295,13 +292,17 @@ class Pipeline:
             # Get image files
             image_files = list(class_dir.glob("*.jpg")) + list(class_dir.glob("*.png"))
 
-            # Apply samples_per_class limit if specified
-            if self.config.samples_per_class not in (None, "max"):
-                if len(image_files) > self.config.samples_per_class:
+            # Apply train_ratio if less than 1.0
+            if self.config.train_ratio < 1.0:
+                num_samples = int(len(image_files) * self.config.train_ratio)
+                if num_samples > 0:
                     rng = np.random.RandomState(self.config.random_seed)
                     image_files = rng.choice(
-                        image_files, size=self.config.samples_per_class, replace=False
+                        image_files, size=num_samples, replace=False
                     ).tolist()
+                else:
+                    # Ensure at least one sample per class
+                    image_files = image_files[:1]
 
             for img_path in tqdm(image_files, desc=f"Loading {class_dir.name}"):
                 images.append(img_path)
@@ -310,19 +311,66 @@ class Pipeline:
         return images, labels
 
     def _load_test_split(self, test_dir: Path) -> Tuple[List[torch.Tensor], List[str]]:
-        """Load test images and labels."""
+        """Load test images and labels.
+
+        The test set is organized differently from train/val:
+        - Images are in a flat directory without class subdirectories
+        - Labels are in a CSV file with numeric class indices
+        - File naming follows pattern 'image_XXXXX_img.jpg'
+        """
         images = []
         labels = []
+
+        # Get ordered list of class names from training directory for index mapping
+        class_names = self._get_class_names(self.config.data_path / "train_rgb")
+
+        # Create index to class name mapping
+        idx_to_class = {idx: name for idx, name in enumerate(class_names)}
 
         # Load test labels
         labels_file = self.config.data_path / "test_labels.csv"
         df = pd.read_csv(labels_file)
 
+        # First collect all valid images and labels
+        valid_samples = []
         for _, row in df.iterrows():
-            img_path = test_dir / f"image_{str(row['id']).zfill(5)}_img.jpg"
-            if img_path.exists():
-                images.append(img_path)
-                labels.append(row["class"])
+            # Map numeric class index to class name
+            class_idx = int(row["class"])
+            if class_idx not in idx_to_class:
+                continue
+
+            class_name = idx_to_class[class_idx]
+
+            # Handle both .png and .jpg extensions
+            img_path_png = test_dir / f"image_{str(row['id']).zfill(5)}_img.png"
+            img_path_jpg = test_dir / f"image_{str(row['id']).zfill(5)}_img.jpg"
+
+            if img_path_png.exists():
+                valid_samples.append((img_path_png, class_name))
+            elif img_path_jpg.exists():
+                valid_samples.append((img_path_jpg, class_name))
+
+        # Apply test_ratio if less than 1.0
+        if self.config.test_ratio < 1.0 and valid_samples:
+            num_samples = int(len(valid_samples) * self.config.test_ratio)
+            if num_samples > 0:
+                rng = np.random.RandomState(self.config.random_seed)
+                indices = rng.choice(
+                    len(valid_samples), size=num_samples, replace=False
+                )
+                valid_samples = [valid_samples[i] for i in indices]
+            else:
+                # Ensure at least one sample if possible
+                valid_samples = valid_samples[:1]
+
+        # Unzip the samples into separate lists
+        images, labels = zip(*valid_samples) if valid_samples else ([], [])
+
+        if not images:
+            raise ValueError(
+                f"No test images found in {test_dir}. "
+                "Check that the test directory and labels file are properly structured."
+            )
 
         return images, labels
 
