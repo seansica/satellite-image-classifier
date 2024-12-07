@@ -1,17 +1,5 @@
 """Core components and base classes."""
 
-from .base import (
-    Registry,
-    RegistryMixin,
-    Dataset,
-    DatasetMetadata,
-    EvaluationResult
-)
+from .base import Registry, RegistryMixin, EvaluationResult
 
-__all__ = [
-    'Registry',
-    'RegistryMixin',
-    'Dataset',
-    'DatasetMetadata',
-    'EvaluationResult'
-]
+__all__ = ["Registry", "RegistryMixin", "EvaluationResult"]

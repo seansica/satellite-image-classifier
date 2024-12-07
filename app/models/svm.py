@@ -1,51 +1,76 @@
-from typing import Optional
-from sklearn.svm import SVC
-import numpy as np
+import torch
+import torch.nn as nn
 
 from .base import Model
-from ..core.types import FeatureArray, LabelArray
+
+
+class HingeLoss(nn.Module):
+    """Multi-class hinge loss with margin."""
+
+    def __init__(self, margin: float = 1.0):
+        super().__init__()
+        self.margin = margin
+
+    def forward(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """Compute the hinge loss.
+
+        Args:
+            output: Predictions of shape (N, C)
+            target: Target labels of shape (N,)
+
+        Returns:
+            torch.Tensor: Average hinge loss
+        """
+        # Ensure output is properly shaped
+        if len(output.shape) != 2:
+            raise ValueError(f"Expected output shape (N, C), got {output.shape}")
+
+        # Get correct class scores
+        target_scores = output[torch.arange(output.size(0)), target]
+
+        # Compute margins for all classes
+        margins = output - target_scores.unsqueeze(1) + self.margin
+
+        # Zero out margin for correct class
+        margins[torch.arange(margins.size(0)), target] = 0
+
+        # Take hinge and mean
+        return torch.mean(torch.clamp(margins, min=0))
+
 
 @Model.register('svm')
 class SVMModel(Model):
-    """Support Vector Machine classifier wrapper."""
-    
-    def __init__(
-        self,
-        kernel: str = 'rbf',
-        C: float = 1.0,
-        gamma: str = 'scale',
-        class_weight: Optional[str] = 'balanced',
-        random_state: int = 42,
-        **kwargs
-    ):
-        super().__init__(
-            kernel=kernel,
-            C=C,
-            gamma=gamma,
-            class_weight=class_weight,
-            random_state=random_state,
-            **kwargs
-        )
-    
-    def _create_model(self) -> SVC:
-        return SVC(
-            kernel=self.params['kernel'],
-            C=self.params['C'],
-            gamma=self.params['gamma'],
-            class_weight=self.params['class_weight'],
-            random_state=self.params['random_state'],
-            probability=True
-        )
-    
-    def fit(self, X: FeatureArray, y: LabelArray) -> None:
-        self._model.fit(X, y)
-    
-    def predict(self, X: FeatureArray) -> LabelArray:
-        return self._model.predict(X)
-    
-    def predict_proba(self, X: FeatureArray) -> np.ndarray:
-        return self._model.predict_proba(X)
-    
+    def __init__(self, input_dim: int, num_classes: int, margin: float = 1.0, **kwargs):
+        self._margin = margin  # Store before super().__init__
+        super().__init__(input_dim, num_classes, **kwargs)
+
+    def build(self) -> None:
+        """Build the SVM model architecture."""
+        self.linear = nn.Linear(self.input_dim, self.num_classes)
+
+        # Initialize weights
+        nn.init.xavier_uniform_(self.linear.weight)
+        nn.init.zeros_(self.linear.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the SVM.
+
+        Args:
+            x: Input tensor of shape (batch_size, input_dim)
+
+        Returns:
+            Tensor of shape (batch_size, num_classes)
+        """
+        # Ensure input is properly shaped
+        if len(x.shape) != 2:
+            x = x.flatten(1)
+
+        return self.linear(x)
+
+    def get_criterion(self) -> nn.Module:
+        """Get the hinge loss criterion."""
+        return HingeLoss(margin=self._margin)
+
     @property
     def name(self) -> str:
         return "SVM"

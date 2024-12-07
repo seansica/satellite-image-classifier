@@ -4,36 +4,7 @@ from pathlib import Path
 from typing import Dict, Generic, List, Optional
 import numpy as np
 
-from .types import T, ImageArray
-
-@dataclass
-class DatasetMetadata:
-    """Metadata about a dataset including paths and labels."""
-    name: str
-    class_names: List[str]
-    n_classes: int
-    n_samples: int
-    data_path: Path
-
-class Dataset:
-    """Container for dataset samples and metadata."""
-    def __init__(
-        self,
-        images: List[ImageArray],
-        labels: List[str],
-        metadata: DatasetMetadata
-    ):
-        self.images = images
-        self.labels = labels
-        self.metadata = metadata
-    
-    @property
-    def n_samples(self) -> int:
-        return len(self.images)
-    
-    @property
-    def class_names(self) -> List[str]:
-        return self.metadata.class_names
+from .types import T
 
 class Registry(Generic[T]):
     """Generic registry for managing named components."""
@@ -81,6 +52,7 @@ class RegistryMixin:
 class EvaluationResult:
     """Container for model evaluation results."""
     model_name: str
+    dataset_split: str  # 'train', 'val', or 'test'
     accuracy: float
     precision: float
     recall: float
