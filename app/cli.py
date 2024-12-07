@@ -55,6 +55,10 @@ def create_parser() -> argparse.ArgumentParser:
         help="Models to evaluate (default: all available models)",
     )
 
+    parser.add_argument(
+        "--epochs", type=int, default=1, help="Number of epochs to use (default: 1)"
+    )
+
     # Add model-specific hyperparameters
     parser.add_argument(
         "--rf-n-estimators",
@@ -228,6 +232,7 @@ def main() -> None:
             random_seed=args.random_seed,
             device=device,
             batch_size=args.batch_size,
+            epochs=args.epochs,
             model_params=model_params,  # Pass model parameters to config
         )
 
