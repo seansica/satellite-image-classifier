@@ -14,7 +14,12 @@ from .core.base import EvaluationResult
 from .data.dataset import Dataset, DatasetMetadata
 from .features.base import FeatureExtractor
 from .models.base import Model
-
+from .evaluation.metrics import evaluate_model
+from .evaluation.visualization import (
+    plot_confusion_matrix,
+    plot_roc_curves,
+    save_metrics_summary,
+)
 
 
 @dataclass
