@@ -34,13 +34,6 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--output-path",
-        type=Path,
-        default=Path("evaluation_results"),
-        help="Directory for saving results (default: evaluation_results)"
-    )
-
-    parser.add_argument(
         "--feature-extractor",
         choices=list_feature_extractors(),
         default="hog",
@@ -223,7 +216,6 @@ def main() -> None:
         # Create pipeline configuration
         config = PipelineConfig(
             data_path=args.data_path,
-            output_path=args.output_path,
             feature_extractor=feature_extractor,
             models=models,
             train_ratio=args.train_ratio,
@@ -254,8 +246,10 @@ def main() -> None:
                 f"\n"
             )
 
-        logger.info("\nEvaluation completed successfully. "
-                   f"Results saved in: {args.output_path}")
+        logger.info(
+            "\nEvaluation completed successfully. "
+            f"Results saved in: {pipeline.output_dir}"
+        )
 
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}", exc_info=True)

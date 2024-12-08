@@ -1,13 +1,18 @@
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
+from sys import platform
+import sys
 import time
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from torchvision import transforms
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import yaml
+import platform
 
 from .models.registry import LazyModel
 from .core.base import EvaluationResult
@@ -26,7 +31,6 @@ from .evaluation.visualization import (
 class PipelineConfig:
     """Configuration for the classification pipeline."""
     data_path: Path
-    output_path: Path
     feature_extractor: FeatureExtractor
     models: List["LazyModel"]
     device: torch.device
@@ -44,12 +48,112 @@ class PipelineConfig:
     model_params: dict = field(default_factory=dict)  # Store model-specific parameters
 
 
+@dataclass
+class ExperimentMetadata:
+    """Metadata about the experiment run."""
+
+    timestamp: datetime
+    config: Dict[str, Any]
+    system_info: Dict[str, str]
+
+    @classmethod
+    def create(cls, config: PipelineConfig) -> "ExperimentMetadata":
+        """Create metadata from pipeline config."""
+        # Create a clean dictionary of config, excluding model weights
+        config_dict = {
+            "batch_size": config.batch_size,
+            "data_path": str(config.data_path),
+            "device": str(config.device),
+            "epochs": config.epochs,
+            "feature_extractor": {
+                "type": config.feature_extractor.__class__.__name__,
+                "output_dim": getattr(config.feature_extractor, "_output_dim", None),
+            },
+            "train_ratio": config.train_ratio,
+            "test_ratio": config.test_ratio,
+            "target_size": config.target_size,
+            "learning_rate": config.learning_rate,
+            "model_params": config.model_params,
+            "models": [m.name for m in config.models],
+        }
+
+        return cls(
+            timestamp=datetime.now(),
+            config=config_dict,
+            system_info={
+                "python_version": sys.version.split()[0],
+                "platform": platform.platform(),
+                "pytorch_version": torch.__version__,
+                "cuda_available": torch.cuda.is_available(),
+                "cuda_version": (
+                    torch.version.cuda if torch.cuda.is_available() else None
+                ),
+            },
+        )
+
+    def save(self, path: Path) -> None:
+        """Save metadata to disk."""
+        with open(path / "experiment_config.yaml", "w") as f:
+            yaml.dump(
+                asdict(self), f, indent=2, sort_keys=False, default_flow_style=False
+            )
+
+
+def generate_output_dir(config: PipelineConfig) -> Path:
+    """Generate deterministic output directory name.
+
+    Format: YYYY-MM-DD_HH-MM-SS_MODEL_FEATURE_trainXpYY
+    Example: 2024-12-08_14-35-22_SVM_ResNet50_train0p80
+
+    Args:
+        config: Pipeline configuration containing model and feature extractor info
+
+    Returns:
+        Path: Directory path for experiment outputs
+    """
+    # Format datetime
+    timestamp = datetime.now()
+    date_str = timestamp.strftime("%Y-%m-%d")
+    time_str = timestamp.strftime("%H-%M-%S")
+
+    # Get model names (e.g., "SVM" or "SVM-RF" for multiple)
+    models_str = "-".join(sorted(m.name.upper() for m in config.models))
+
+    # Get feature extractor name without "FeatureExtractor" suffix
+    feature_name = config.feature_extractor.__class__.__name__
+    if feature_name.endswith("FeatureExtractor"):
+        feature_name = feature_name[:-15]  # Remove "FeatureExtractor"
+
+    # Format train ratio (e.g., 0.05 -> "0p05", 1.00 -> "1p00")
+    train_ratio = f"train{config.train_ratio:0.2f}".replace(".", "p")
+
+    # Construct directory name
+    dir_name = f"{date_str}_{time_str}_{models_str}_{feature_name}__{train_ratio}"
+
+    return Path("results") / dir_name
+
+
 class Pipeline:
+
     def __init__(self, config: PipelineConfig):
+        """Initialize pipeline with config and optional CLI args."""
         self.config = config
-        self.config.output_path.mkdir(parents=True, exist_ok=True)
-        (self.config.output_path / "plots").mkdir(exist_ok=True)
-        (self.config.output_path / "metrics").mkdir(exist_ok=True)
+
+        # Generate output directory
+        self.output_dir = generate_output_dir(config)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create subdirectories
+        self.plots_dir = self.output_dir / "plots"
+        self.models_dir = self.output_dir / "models"
+        self.metrics_dir = self.output_dir / "metrics"
+
+        for directory in [self.plots_dir, self.models_dir, self.metrics_dir]:
+            directory.mkdir(exist_ok=True)
+
+        # Save experiment metadata
+        metadata = ExperimentMetadata.create(config)
+        metadata.save(self.output_dir)
 
         # Move feature extractor to device
         self.config.feature_extractor.to(self.config.device)
@@ -97,6 +201,11 @@ class Pipeline:
             # Train the model
             self._train_model(model, train_loader, val_loader)
             training_time = time.time() - start_time
+
+            # Save trained model
+            model_path = self.models_dir / model.name
+            model_path.mkdir(exist_ok=True)
+            self._save_model(model, model_path)
 
             # Evaluate on all splits
             splits = [
@@ -417,6 +526,27 @@ class Pipeline:
 
     def _save_results(self, result: EvaluationResult, class_names: List[str]) -> None:
         """Save evaluation results and plots."""
-        plot_confusion_matrix(result, class_names, self.config.output_path / "plots")
-        plot_roc_curves(result, self.config.output_path / "plots")
-        save_metrics_summary(result, self.config.output_path / "metrics")
+        plot_confusion_matrix(result, class_names, self.plots_dir)
+        plot_roc_curves(result, self.plots_dir)
+        save_metrics_summary(result, self.metrics_dir)
+
+    def _save_model(self, model: Model, path: Path) -> None:
+        """Save model weights and architecture summary."""
+        # Save model weights
+        torch.save(model.state_dict(), path / "model.pt")
+
+        # Save model architecture summary
+        summary = {
+            "name": model.name,
+            "type": model.__class__.__name__,
+            "input_dim": model.input_dim,
+            "num_classes": model.num_classes,
+            "parameters": sum(p.numel() for p in model.parameters()),
+            "trainable_parameters": sum(
+                p.numel() for p in model.parameters() if p.requires_grad
+            ),
+            "hyperparameters": model.params,
+        }
+
+        with open(path / "architecture.yaml", "w") as f:
+            yaml.dump(summary, f, indent=2, sort_keys=False, default_flow_style=False)

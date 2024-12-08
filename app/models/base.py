@@ -1,7 +1,11 @@
 from abc import ABC, abstractmethod
+import json
+from pathlib import Path
 import torch
 import torch.nn as nn
-from typing import Dict, Type, Optional, Tuple
+from typing import ClassVar, Dict, Type, Optional, Tuple
+
+import yaml
 
 from ..core.base import Registry
 
@@ -11,6 +15,10 @@ class Model(nn.Module, ABC):
 
     # Class-level registry
     _registry: Optional[Registry] = None
+
+    model_type: ClassVar[str] = (
+        "pytorch"  # Can be overridden if using sklearn models (et al)
+    )
 
     def __init__(self, input_dim: int, num_classes: int, **kwargs):
         """Initialize the model.
@@ -116,3 +124,51 @@ class Model(nn.Module, ABC):
     def name(self) -> str:
         """Name of the model."""
         pass
+
+    def save(self, path: Path) -> None:
+        """Save model to disk.
+
+        Args:
+            path: Directory to save model files
+        """
+        model_dir = path / "models" / self.name
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save model metadata
+        metadata = {
+            "model_type": self.model_type,
+            "input_dim": self.input_dim,
+            "num_classes": self.num_classes,
+            "params": self.params,
+        }
+        with open(model_dir / "metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        # Save model state
+        if self.model_type == "pytorch":
+            torch.save(self.state_dict(), model_dir / "model.pt")
+        else:
+            # Handle sklearn models
+            import joblib
+
+            joblib.dump(self, model_dir / "model.joblib")
+
+    @classmethod
+    def load(cls, path: Path, map_location: Optional[torch.device] = None) -> "Model":
+        """Load a saved model."""
+        # Load architecture summary
+        with open(path / "architecture.yaml", "r") as f:
+            architecture = yaml.safe_load(f)
+
+        # Create model instance
+        model = cls(
+            input_dim=architecture["input_dim"],
+            num_classes=architecture["num_classes"],
+            **architecture["hyperparameters"]
+        )
+
+        # Load weights
+        state_dict = torch.load(path / "model.pt", map_location=map_location)
+        model.load_state_dict(state_dict)
+
+        return model
