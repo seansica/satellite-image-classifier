@@ -14,6 +14,11 @@ from tqdm import tqdm
 import yaml
 import platform
 
+from .models.svm import SVMModel
+from .models.rf import RandomForestModel
+from .models.gbm import GradientBoostingModel
+from .models.logistic import LogisticRegressionModel
+
 from .models.registry import LazyModel
 from .core.base import EvaluationResult
 from .data.dataset import Dataset, DatasetMetadata
@@ -239,6 +244,61 @@ class Pipeline:
             num_workers=self.config.num_workers,
             pin_memory=True,
         )
+
+    def _configure_optimizer(self, model: Model) -> torch.optim.Optimizer:
+        """Configure optimizer with appropriate regularization per model type.
+
+        Args:
+            model: The model instance to configure optimization for
+
+        Returns:
+            Configured optimizer instance with appropriate regularization
+
+        Raises:
+            ValueError: If model type is not supported
+        """
+        base_lr = self.learning_rate
+
+        if isinstance(model, SVMModel):
+            # SVM typically benefits from L2 regularization via weight decay
+            # Often uses slightly higher weight decay than other linear models
+            return torch.optim.SGD(
+                model.parameters(),
+                lr=base_lr,
+                weight_decay=0.01,  # Higher L2 penalty typical for SVMs
+                momentum=0.9,  # Momentum helps with margin optimization
+            )
+
+        elif isinstance(model, LogisticRegressionModel):
+            # Logistic regression typically uses L2 regularization
+            # But usually with a lighter touch than SVM
+            return torch.optim.SGD(
+                model.parameters(),
+                lr=base_lr,
+                weight_decay=0.001,  # Lighter L2 penalty
+                momentum=0.9,
+            )
+
+        elif isinstance(model, (RandomForestModel, GradientBoostingModel)):
+            # Tree-based models don't use weight decay
+            # They use simpler optimization as they're updated discretely
+            return torch.optim.SGD(
+                model.parameters(),
+                lr=base_lr,
+                momentum=0.0,  # No momentum needed for tree-based models
+            )
+
+        else:
+            supported_models = [
+                "SVMModel",
+                "LogisticRegressionModel",
+                "RandomForestModel",
+                "GradientBoostingModel",
+            ]
+            raise ValueError(
+                f"Unsupported model type: {type(model)}. "
+                f"Supported models are: {', '.join(supported_models)}"
+            )
 
     def _train_model(
         self,
