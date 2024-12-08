@@ -1,100 +1,177 @@
 import torch
 import torch.nn as nn
-
+import numpy as np
+from typing import Tuple, Dict, Optional
+from sklearn.ensemble import RandomForestClassifier
 from .base import Model
 
 @Model.register('rf')
 class RandomForestModel(Model):
-    """Memory-efficient Neural Random Forest classifier."""
+    """Random Forest implementation using scikit-learn backend with PyTorch interface."""
 
     def __init__(
         self,
         input_dim: int,
         num_classes: int,
-        n_estimators: int = 10,
-        max_depth: int = 3,
-        hidden_dim: int = None,
-        dropout: float = 0.1,
-        **kwargs
+        n_estimators: int = 100,
+        max_depth: Optional[int] = None,
+        min_samples_split: int = 2,
+        min_samples_leaf: int = 1,
+        max_features: str = "sqrt",
+        bootstrap: bool = True,
+        n_jobs: int = -1,
+        **kwargs,
     ):
-        # Store model-specific parameters
-        self._n_estimators = n_estimators
-        self._max_depth = max_depth
-        self._dropout = dropout
+        # Store RF-specific parameters before parent class initialization
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.min_samples_split = min_samples_split
+        self.min_samples_leaf = min_samples_leaf
+        self.max_features = max_features
+        self.bootstrap = bootstrap
+        self.n_jobs = n_jobs
 
-        # More conservative hidden dimension calculation
-        if hidden_dim is not None:
-            self._hidden_dim = hidden_dim
-        else:
-            self._hidden_dim = max(input_dim // 4, 10)
-
-        # Call parent's __init__ after setting model-specific parameters
+        # Initialize parent class
         super().__init__(input_dim, num_classes, **kwargs)
 
-    def _create_tree(self) -> nn.Module:
-        """Create a single decision tree network with reduced complexity."""
-        layers = []
-        curr_dim = self.input_dim
-
-        for depth in range(self._max_depth):
-            out_dim = (
-                self._hidden_dim if depth < self._max_depth - 1 else self.num_classes
-            )
-
-            # Ensure linear layer parameters require gradients
-            linear = nn.Linear(curr_dim, out_dim)
-            linear.weight.requires_grad_(True)
-            linear.bias.requires_grad_(True)
-
-            layers.extend(
-                [
-                    linear,
-                    nn.ReLU() if depth < self._max_depth - 1 else nn.Identity(),
-                    (
-                        nn.Dropout(self._dropout)
-                        if depth < self._max_depth - 1
-                        else nn.Identity()
-                    ),
-                ]
-            )
-            curr_dim = out_dim
-
-        return nn.Sequential(*layers)
-
     def build(self) -> None:
-        """Build the random forest model."""
-        self.trees = nn.ModuleList(
-            [self._create_tree() for _ in range(self._n_estimators)]
+        """Initialize the sklearn RandomForestClassifier."""
+        self.model = RandomForestClassifier(
+            n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
+            min_samples_split=self.min_samples_split,
+            min_samples_leaf=self.min_samples_leaf,
+            max_features=self.max_features,
+            bootstrap=self.bootstrap,
+            n_jobs=self.n_jobs,
+            random_state=42,
         )
 
+        # Add dummy parameter for PyTorch compatibility
+        self.dummy_param = nn.Parameter(torch.zeros(1))
+
+        # Initialize criterion for validation
+        self.criterion_fn = nn.CrossEntropyLoss()
+
+        # Track if model has been fitted
+        self.is_fitted = False
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Memory-efficient forward pass."""
-        # Ensure input requires gradients
-        if not x.requires_grad:
-            x = x.detach().requires_grad_(True)
+        """Forward pass returning class probabilities.
 
-        # Process trees in chunks to save memory
-        chunk_size = 5  # Process 5 trees at a time
-        outputs = []
+        Args:
+            x: Input tensor of shape (batch_size, input_dim)
 
-        for i in range(0, len(self.trees), chunk_size):
-            chunk_trees = list(self.trees[i : i + chunk_size])
-            chunk_outputs = []
+        Returns:
+            Class probabilities tensor of shape (batch_size, num_classes)
+        """
+        if not self.is_fitted:
+            # Return uniform probabilities if not fitted
+            batch_size = x.shape[0]
+            return (
+                torch.ones(batch_size, self.num_classes, device=x.device)
+                / self.num_classes
+            )
 
-            for tree in chunk_trees:
-                chunk_outputs.append(tree(x))
+        # Convert to numpy for sklearn
+        x_np = x.detach().cpu().numpy()
 
-            # Average the chunk
-            chunk_avg = torch.mean(torch.stack(chunk_outputs), dim=0)
-            outputs.append(chunk_avg)
+        # Get predictions
+        probas = self.model.predict_proba(x_np)
 
-        # Final average across all chunks
-        return torch.mean(torch.stack(outputs), dim=0)
+        # Convert back to torch tensor
+        return torch.from_numpy(probas).float().to(x.device)
+
+    def train_step(
+        self, batch: Tuple[torch.Tensor, torch.Tensor], optimizer: torch.optim.Optimizer
+    ) -> float:
+        """Train the model using sklearn's fit method.
+
+        Args:
+            batch: Tuple of (inputs, targets)
+            optimizer: Unused, kept for pipeline compatibility
+
+        Returns:
+            0.0 as loss value (actual training handled by sklearn)
+        """
+        X, y = batch
+
+        # Convert to numpy
+        X_np = X.detach().cpu().numpy()
+        y_np = y.detach().cpu().numpy()
+
+        # Fit the model
+        self.model.fit(X_np, y_np)
+        self.is_fitted = True
+
+        # Handle optimizer step with dummy parameter to maintain pipeline compatibility
+        optimizer.zero_grad()
+        loss = torch.tensor(0.0, requires_grad=True, device=self.dummy_param.device)
+        loss.backward()
+        optimizer.step()
+
+        return 0.0
+
+    def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor]) -> float:
+        """Compute validation loss using CrossEntropy.
+
+        Args:
+            batch: Tuple of (inputs, targets)
+
+        Returns:
+            Validation loss value
+        """
+        X, y = batch
+        outputs = self(X)
+        return self.criterion_fn(outputs, y).item()
+
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
+        """Predict class labels.
+
+        Args:
+            x: Input tensor of shape (batch_size, input_dim)
+
+        Returns:
+            Predicted class labels tensor of shape (batch_size,)
+        """
+        if not self.is_fitted:
+            # Return zeros if not fitted
+            return torch.zeros(x.shape[0], dtype=torch.long, device=x.device)
+
+        # Convert to numpy for sklearn
+        x_np = x.detach().cpu().numpy()
+
+        # Get predictions
+        preds = self.model.predict(x_np)
+
+        # Convert back to torch tensor
+        return torch.from_numpy(preds).to(x.device)
 
     def get_criterion(self) -> nn.Module:
-        """Get the loss criterion."""
-        return nn.CrossEntropyLoss()
+        """Get the loss criterion (CrossEntropyLoss for classification)."""
+        return self.criterion_fn
 
     @property
     def name(self) -> str:
+        """Model name."""
         return "RandomForest"
+
+    def extra_repr(self) -> str:
+        """Additional model info for string representation."""
+        return (
+            f"n_estimators={self.n_estimators}, "
+            f"max_depth={self.max_depth}, "
+            f"min_samples_split={self.min_samples_split}"
+        )
+
+    def get_params(self) -> Dict:
+        """Get model parameters for serialization."""
+        return {
+            "n_estimators": self.n_estimators,
+            "max_depth": self.max_depth,
+            "min_samples_split": self.min_samples_split,
+            "min_samples_leaf": self.min_samples_leaf,
+            "max_features": self.max_features,
+            "bootstrap": self.bootstrap,
+            "n_jobs": self.n_jobs,
+        }

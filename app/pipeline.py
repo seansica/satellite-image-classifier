@@ -257,7 +257,7 @@ class Pipeline:
         Raises:
             ValueError: If model type is not supported
         """
-        base_lr = self.learning_rate
+        base_lr = self.config.learning_rate
 
         if isinstance(model, SVMModel):
             # SVM typically benefits from L2 regularization via weight decay
@@ -280,12 +280,10 @@ class Pipeline:
             )
 
         elif isinstance(model, (RandomForestModel, GradientBoostingModel)):
-            # Tree-based models don't use weight decay
-            # They use simpler optimization as they're updated discretely
+            # For sklearn-based models, use minimal optimizer since they handle their own training
             return torch.optim.SGD(
-                model.parameters(),
-                lr=base_lr,
-                momentum=0.0,  # No momentum needed for tree-based models
+                model.parameters(),  # Only contains dummy parameter
+                lr=0.0,  # Learning rate doesn't matter since these models don't use gradient updates
             )
 
         else:
