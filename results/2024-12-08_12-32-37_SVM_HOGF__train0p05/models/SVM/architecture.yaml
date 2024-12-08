@@ -1,7 +1,0 @@
-name: SVM
-type: SVMModel
-input_dim: 7056
-num_classes: 11
-parameters: 77627
-trainable_parameters: 77627
-hyperparameters: {}
