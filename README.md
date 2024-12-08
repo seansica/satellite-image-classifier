@@ -109,46 +109,28 @@ The framework expects datasets to be organized in a directory structure where ea
 
 ```
 dataset/
-├── class1/
-│   ├── image1.jpg
-│   ├── image2.jpg
-│   └── ...
-├── class2/
-│   ├── image1.jpg
-│   ├── image2.jpg
-│   └── ...
-└── ...
-dataset/
 ├── test_rgb/
+|   ├── image1.jpg
+|   ├── image2.jpg
+|   ├── ...
 ├── train_rgb/
 │   ├── AcrimSat/
 │       └── image1.jpg
 |       ├── image2.jpg
+|       ├── ...
 │   ├── Aquarius/
-│   ├── Aura/
-│   ├── Calipso/
-│   ├── Cloudsat/
-│   ├── CubeSat/
-│   ├── Debris/
-│   ├── Jason/
-│   ├── Sentinel-6/
-│   ├── TRMM/
-│   └── Terra/
+│   ├── class3/
+│   ├── class4/
+│   ├── .../
 └── validate_rgb
     ├── AcrimSat/
     ├── Aquarius/
-    ├── Aura/
-    ├── Calipso/
-    ├── Cloudsat/
-    ├── CubeSat/
-    ├── Debris/
-    ├── Jason/
-    ├── Sentinel-6/
-    ├── TRMM/
-    └── Terra/
+    ├── class3/
+    ├── class4/
+    ├── .../
 ```
 
-Furthermore, a file named `test_labels.csv` is expected in the root of the dataset directory in the following format:
+A file named `test_labels.csv` is expected in the root of the dataset directory:
 ```csv
 id,image,depth,class,bbox
 0,image_00000_img.png,image_00000_depth.png,1,"[457, 524, 684, 733]"
@@ -158,14 +140,22 @@ id,image,depth,class,bbox
 4,image_00004_img.png,image_00004_depth.png,9,"[436, 574, 734, 842]"
 ```
 
-The class indices `1`, `6`, `0`, and so forth, are empirical representations of the satellite class names shown in the subdirectories above (e.g., AcrimSat, Aquiarius, etc.).
+This file is essential because the test set is not annotated. We map the empirical indices in the `class` column to map back to the satellite class names shown in the subdirectories above (e.g., AcrimSat, Aquiarius, etc.).
 
 While initially designed for the SPARK 2021 space object detection dataset, which includes classes like AcrimSat, Aquarius, Aura, etc., the framework can work with any image dataset organized in this manner.
 
 ## Features
 
-- Multiple feature extraction methods (currently supports HOG)
-- Multiple classification models (currently supports SVM and Logistic Regression)
+- Multiple feature extraction methods
+  - Histogram of Gradients (HOG)
+  - Hue, Saturation, and Value (HSV)
+  - Lineary Binary Patterns (LBP)
+  - ResNet50 (activations extracted from the penultimate layer)
+- Multiple classification models
+  - Support Vector Machine (SVM)
+  - Logistic Regression (LR)
+  - Random Forest (RF)
+  - Gradient Boosted Model (GBM)
 - Automatic data splitting with stratification
 - Comprehensive evaluation metrics
 - Visualization of results including confusion matrices and ROC curves
