@@ -74,33 +74,33 @@ This will run the classification pipeline with default settings. For more contro
 ```bash
 poetry run python -m app.cli \
     --data-path path/to/dataset \
-    --output-path results \
     --feature-extractor hog \
     --models svm logistic \
-    --samples-per-class 1000 \
+    --train-ratio 1.0 \
+    --test-ratio 1.0 \
     --image-size 224 224 \
     --log-level DEBUG
 ```
 
+`train-ratio` and `test-ratio` allows you to specify how much of the training corpus to use. Use small values like 0.05 and 0.1 for testing/toy models. `train-ratio` controls the `train_rbg/` and `validate_rgb/` percentage while `test-ratio` only controls the `test_rgb/`.
+
 ### Output
 
-The framework generates comprehensive evaluation results in the specified output directory:
+The framework generates comprehensive evaluation results in the `results` output directory. Each experiment is organized into its own subdirectory that is timestamped and annotated with key identifying information such as model and train ratio:
 
 ```
-output_path/
-├── plots/
-│   ├── SVM_confusion_matrix.png
-│   ├── SVM_roc_curves.png
-│   ├── LogisticRegression_confusion_matrix.png
-│   └── LogisticRegression_roc_curves.png
-└── metrics/
-    ├── SVM_metrics.json
-    ├── SVM_feature_importance.csv
-    ├── SVM_training_summary.json
-    ├── LogisticRegression_metrics.json
-    ├── LogisticRegression_feature_importance.csv
-    ├── LogisticRegression_training_summary.json
-    └── overall_comparison.csv
+results
+├── 2024-12-08_15-02-23_LOGISTIC_ResNet50F__train1p00
+│   ├── experiment_config.yaml
+│   ├── metrics
+│   │   └── LogisticRegression_metrics_summary.txt
+│   ├── models
+│   │   └── LogisticRegression
+│   │       ├── architecture.yaml
+│   │       └── model.pt
+│   └── plots
+│       ├── LogisticRegression_confusion_matrix.png
+│       └── LogisticRegression_roc_curves.png
 ```
 
 ## Dataset Structure
@@ -118,7 +118,47 @@ dataset/
 │   ├── image2.jpg
 │   └── ...
 └── ...
+dataset/
+├── test_rgb/
+├── train_rgb/
+│   ├── AcrimSat/
+│       └── image1.jpg
+|       ├── image2.jpg
+│   ├── Aquarius/
+│   ├── Aura/
+│   ├── Calipso/
+│   ├── Cloudsat/
+│   ├── CubeSat/
+│   ├── Debris/
+│   ├── Jason/
+│   ├── Sentinel-6/
+│   ├── TRMM/
+│   └── Terra/
+└── validate_rgb
+    ├── AcrimSat/
+    ├── Aquarius/
+    ├── Aura/
+    ├── Calipso/
+    ├── Cloudsat/
+    ├── CubeSat/
+    ├── Debris/
+    ├── Jason/
+    ├── Sentinel-6/
+    ├── TRMM/
+    └── Terra/
 ```
+
+Furthermore, a file named `test_labels.csv` is expected in the root of the dataset directory in the following format:
+```csv
+id,image,depth,class,bbox
+0,image_00000_img.png,image_00000_depth.png,1,"[457, 524, 684, 733]"
+1,image_00001_img.png,image_00001_depth.png,6,"[58, 193, 299, 495]"
+2,image_00002_img.png,image_00002_depth.png,0,"[411, 406, 491, 490]"
+3,image_00003_img.png,image_00003_depth.png,7,"[346, 640, 763, 892]"
+4,image_00004_img.png,image_00004_depth.png,9,"[436, 574, 734, 842]"
+```
+
+The class indices `1`, `6`, `0`, and so forth, are empirical representations of the satellite class names shown in the subdirectories above (e.g., AcrimSat, Aquiarius, etc.).
 
 While initially designed for the SPARK 2021 space object detection dataset, which includes classes like AcrimSat, Aquarius, Aura, etc., the framework can work with any image dataset organized in this manner.
 
@@ -136,14 +176,14 @@ While initially designed for the SPARK 2021 space object detection dataset, whic
 
 When working with large datasets, consider:
 
-1. The `samples-per-class` parameter to limit memory usage
+1. The `train-ratio` and `test-ratio` parameters to limit memory usage
 2. Image resolution settings via `image-size`
 3. Feature extraction method choice, as some methods may be more computationally intensive
 
 ## Limitations
 
 - Currently supports only image classification tasks
-- Images must be in a format readable by OpenCV (typically .jpg, .png)
+- Images must be in jpg format
 - All images in a dataset must be accessible as files on disk
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for information on extending the framework with new models or feature extractors.
