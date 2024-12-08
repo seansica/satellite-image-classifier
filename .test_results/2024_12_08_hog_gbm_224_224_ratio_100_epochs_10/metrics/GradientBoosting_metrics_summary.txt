@@ -1,0 +1,23 @@
+Model: GradientBoosting
+--------------------------------------------------
+
+Performance Metrics:
+Accuracy:  0.3086
+Precision: 0.2947
+Recall:    0.3086
+F1 Score:  0.2829
+
+Training Time: 5152.00 seconds
+
+ROC AUC Scores:
+AcrimSat: 0.8938
+Aquarius: 0.7702
+Aura: 0.8361
+Calipso: 0.7329
+Cloudsat: 0.6597
+CubeSat: 0.8178
+Debris: 0.8218
+Jason: 0.8215
+Sentinel-6: 0.7619
+TRMM: 0.4504
+Terra: 0.4101

@@ -1,0 +1,23 @@
+Model: LogisticRegression
+--------------------------------------------------
+
+Performance Metrics:
+Accuracy:  0.2074
+Precision: 0.2187
+Recall:    0.2074
+F1 Score:  0.1930
+
+Training Time: 2745.68 seconds
+
+ROC AUC Scores:
+AcrimSat: 0.7658
+Aquarius: 0.6385
+Aura: 0.7028
+Calipso: 0.6178
+Cloudsat: 0.6468
+CubeSat: 0.6900
+Debris: 0.7175
+Jason: 0.7086
+Sentinel-6: 0.6118
+TRMM: 0.4632
+Terra: 0.4303
