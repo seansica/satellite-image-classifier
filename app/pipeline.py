@@ -291,6 +291,14 @@ class Pipeline:
     ) -> None:
         """Train model using pre-extracted features."""
         optimizer = self._configure_optimizer(model)
+
+        if isinstance(model, RandomForestModel):
+            # Train RF on complete dataset at once
+            loss = model.train_step((train_features, train_labels), optimizer)
+            print(f"RF Training Loss: {loss:.4f}")
+            return
+
+        # Regular batched training for other models
         best_val_loss = float("inf")
         patience_counter = 0
 

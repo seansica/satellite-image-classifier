@@ -85,26 +85,17 @@ class RandomForestModel(Model):
     def train_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], optimizer: torch.optim.Optimizer
     ) -> float:
-        """Train the model using sklearn's fit method.
-
-        Args:
-            batch: Tuple of (inputs, targets)
-            optimizer: Unused, kept for pipeline compatibility
-
-        Returns:
-            0.0 as loss value (actual training handled by sklearn)
-        """
+        """Train using complete dataset.
+        Note: First batch should contain full dataset for RF."""
         X, y = batch
-
-        # Convert to numpy
         X_np = X.detach().cpu().numpy()
         y_np = y.detach().cpu().numpy()
 
-        # Fit the model
-        self.model.fit(X_np, y_np)
-        self.is_fitted = True
+        if not self.is_fitted:
+            self.model.fit(X_np, y_np)
+            self.is_fitted = True
 
-        # Handle optimizer step with dummy parameter to maintain pipeline compatibility
+        # Maintain PyTorch compatibility
         optimizer.zero_grad()
         loss = torch.tensor(0.0, requires_grad=True, device=self.dummy_param.device)
         loss.backward()
