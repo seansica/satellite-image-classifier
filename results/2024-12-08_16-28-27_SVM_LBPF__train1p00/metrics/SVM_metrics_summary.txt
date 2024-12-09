@@ -1,0 +1,23 @@
+Model: SVM
+--------------------------------------------------
+
+Performance Metrics:
+Accuracy:  0.2255
+Precision: 0.1954
+Recall:    0.2255
+F1 Score:  0.1443
+
+Training Time: 5128.82 seconds
+
+ROC AUC Scores:
+AcrimSat: 0.8471
+Aquarius: 0.6290
+Aura: 0.7036
+Calipso: 0.6140
+Cloudsat: 0.5851
+CubeSat: 0.6449
+Debris: 0.7195
+Jason: 0.7250
+Sentinel-6: 0.6530
+TRMM: 0.4415
+Terra: 0.4248

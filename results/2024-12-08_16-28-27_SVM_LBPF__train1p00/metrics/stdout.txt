@@ -1,0 +1,30 @@
+Classification Results Summary:
+
+SVM (train):
+  Accuracy:  0.2704
+  Precision: 0.2481
+  Recall:    0.2704
+  F1 Score:  0.1769
+
+  Time To Train: 5128.82s
+
+
+SVM (val):
+  Accuracy:  0.2184
+  Precision: 0.2292
+  Recall:    0.2184
+  F1 Score:  0.1404
+
+  Time To Train: 5128.82s
+
+
+SVM (test):
+  Accuracy:  0.2255
+  Precision: 0.1954
+  Recall:    0.2255
+  F1 Score:  0.1443
+
+  Time To Train: 5128.82s
+
+
+Evaluation completed successfully. Results saved in: results/2024-12-08_16-28-27_SVM_LBPF__train1p00

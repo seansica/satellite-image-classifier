@@ -1,0 +1,30 @@
+Classification Results Summary:
+
+LogisticRegression (train):
+  Accuracy:  0.1694
+  Precision: 0.0685
+  Recall:    0.1694
+  F1 Score:  0.0532
+
+  Time To Train: 664.47s
+
+
+LogisticRegression (val):
+  Accuracy:  0.1699
+  Precision: 0.0688
+  Recall:    0.1699
+  F1 Score:  0.0543
+
+  Time To Train: 664.47s
+
+
+LogisticRegression (test):
+  Accuracy:  0.1690
+  Precision: 0.0659
+  Recall:    0.1690
+  F1 Score:  0.0527
+
+  Time To Train: 664.47s
+
+
+Evaluation completed successfully. Results saved in: results/2024-12-08_15-02-23_LOGISTIC_ResNet50F__train1p00
