@@ -160,6 +160,9 @@ class Pipeline:
         metadata = ExperimentMetadata.create(config)
         metadata.save(self.output_dir)
 
+        # Add cache for extracted features
+        self.feature_cache = {}
+
         # Move feature extractor to device
         self.config.feature_extractor.to(self.config.device)
 
@@ -168,34 +171,68 @@ class Pipeline:
         if torch.cuda.is_available():
             torch.cuda.manual_seed(config.random_seed)
 
-    def run(self) -> List[EvaluationResult]:
-        print("Starting satellite image classification pipeline...")
+    def _extract_and_cache_features(
+        self, loader: DataLoader, split_name: str
+    ) -> torch.Tensor:
+        """Extract features once and cache them for reuse."""
+        if split_name in self.feature_cache:
+            return self.feature_cache[split_name]
 
-        # Load datasets
-        train_dataset, val_dataset, test_dataset = self._load_dataset()
-        print(
-            f"Loaded datasets - Train: {len(train_dataset)}, "
-            f"Val: {len(val_dataset)}, Test: {len(test_dataset)} images"
+        all_features = []
+        all_labels = []
+
+        with torch.no_grad():
+            for inputs, labels in tqdm(
+                loader, desc=f"Extracting features for {split_name}"
+            ):
+                inputs = inputs.to(self.config.device)
+                features = self.config.feature_extractor.extract(inputs)
+
+                # Keep features on device if possible
+                all_features.append(features)
+                all_labels.append(labels.to(self.config.device))
+
+        # Concatenate once instead of repeatedly
+        features = torch.cat(all_features)
+        labels = torch.cat(all_labels)
+
+        self.feature_cache[split_name] = (features, labels)
+        return features, labels
+
+    def _create_evaluation_loader(self, dataset: Dataset) -> DataLoader:
+        """Create a loader optimized for evaluation."""
+        return DataLoader(
+            dataset,
+            batch_size=self.config.batch_size * 2,  # Double batch size for eval
+            shuffle=False,
+            num_workers=self.config.num_workers,
+            pin_memory=True,
         )
 
-        # Create data loaders
+    def run(self) -> List[EvaluationResult]:
+        # Load datasets
+        train_dataset, val_dataset, test_dataset = self._load_dataset()
+
+        # Create loaders with optimized batch sizes
         train_loader = self._create_loader(train_dataset, shuffle=True)
-        val_loader = self._create_loader(val_dataset, shuffle=False)
-        test_loader = self._create_loader(test_dataset, shuffle=False)
+        val_loader = self._create_evaluation_loader(val_dataset)
+        test_loader = self._create_evaluation_loader(test_dataset)
 
-        # Get a sample batch to determine feature dimension
-        sample_inputs, _ = next(iter(train_loader))
-        sample_inputs = sample_inputs.to(self.config.device)
-        sample_features = self.config.feature_extractor.extract(sample_inputs)
-        input_dim = sample_features.shape[1]
+        # Extract features once for each split
+        print("Extracting features for all splits...")
+        train_features, train_labels = self._extract_and_cache_features(
+            train_loader, "train"
+        )
+        val_features, val_labels = self._extract_and_cache_features(val_loader, "val")
+        test_features, test_labels = self._extract_and_cache_features(
+            test_loader, "test"
+        )
 
-        print(f"Feature dimension: {input_dim}")
+        all_results = []  # Store results from all models
 
-        results = []
         for model_wrapper in self.config.models:
-            # Initialize model with correct dimensions
             model = model_wrapper.create(
-                input_dim=input_dim,
+                input_dim=train_features.shape[1],
                 num_classes=len(train_dataset.class_names),
                 model_params=self.config.model_params,
             ).to(self.config.device)
@@ -203,8 +240,13 @@ class Pipeline:
             print(f"\nTraining {model.name}...")
             start_time = time.time()
 
-            # Train the model
-            self._train_model(model, train_loader, val_loader)
+            # Train using cached features
+            self._train_model_with_features(
+                model,
+                train_features,
+                train_labels,
+                (val_features, val_labels) if val_loader else None,
+            )
             training_time = time.time() - start_time
 
             # Save trained model
@@ -212,28 +254,116 @@ class Pipeline:
             model_path.mkdir(exist_ok=True)
             self._save_model(model, model_path)
 
-            # Evaluate on all splits
+            # Evaluate on all splits using cached features
             splits = [
-                ("train", train_loader),
-                ("val", val_loader),
-                ("test", test_loader),
+                ("train", (train_features, train_labels)),
+                ("val", (val_features, val_labels)),
+                ("test", (test_features, test_labels)),
             ]
 
-            for split_name, loader in splits:
-                predictions, labels = self._get_predictions(model, loader)
-
+            # Collect results for all splits for this model
+            model_results = []
+            for split_name, (features, labels) in splits:
                 result = evaluate_model(
                     model=model,
                     class_names=train_dataset.class_names,
                     training_time=training_time,
                     dataset_split=split_name,
-                    features=predictions,
+                    features=features,
                     labels=labels,
                 )
-                self._save_results(result, train_dataset.class_names)
-                results.append(result)
+                model_results.append(result)
 
-        return results
+            # Save results for this model
+            self._save_results(model_results, train_dataset.class_names)
+
+            # Add to overall results
+            all_results.extend(model_results)
+
+        return all_results
+
+    def _train_model_with_features(
+        self,
+        model: Model,
+        train_features: torch.Tensor,
+        train_labels: torch.Tensor,
+        val_data: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+    ) -> None:
+        """Train model using pre-extracted features."""
+        optimizer = self._configure_optimizer(model)
+        best_val_loss = float("inf")
+        patience_counter = 0
+
+        # Calculate number of batches
+        batch_size = self.config.batch_size
+        n_samples = train_features.shape[0]
+        indices = torch.arange(n_samples)
+
+        for epoch in range(self.config.epochs):
+            # Training phase
+            model.train()
+            train_loss = 0.0
+
+            # Shuffle indices for each epoch
+            shuffled_indices = indices[torch.randperm(n_samples)]
+
+            # Process in batches
+            for i in tqdm(
+                range(0, n_samples, batch_size),
+                desc=f"Epoch {epoch + 1}/{self.config.epochs}",
+            ):
+                batch_indices = shuffled_indices[i : i + batch_size]
+                batch_features = train_features[batch_indices]
+                batch_labels = train_labels[batch_indices]
+
+                loss = model.train_step((batch_features, batch_labels), optimizer)
+                train_loss += loss
+
+            avg_train_loss = train_loss / (n_samples // batch_size)
+
+            # Validation phase
+            if val_data is not None:
+                val_features, val_labels = val_data
+                val_loss = self._validate_model_with_features(
+                    model, val_features, val_labels
+                )
+                print(
+                    f"Epoch {epoch + 1} - Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}"
+                )
+
+                # Early stopping
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if patience_counter >= self.config.patience:
+                        print(f"Early stopping after {epoch + 1} epochs")
+                        break
+            else:
+                print(f"Epoch {epoch + 1} - Train Loss: {avg_train_loss:.4f}")
+
+    def _validate_model_with_features(
+        self,
+        model: Model,
+        val_features: torch.Tensor,
+        val_labels: torch.Tensor,
+    ) -> float:
+        """Validate model using pre-extracted features."""
+        model.eval()
+        total_loss = 0.0
+        batch_size = self.config.batch_size * 2  # Larger batch size for validation
+        n_samples = val_features.shape[0]
+
+        with torch.no_grad():
+            for i in range(0, n_samples, batch_size):
+                batch_features = val_features[i : i + batch_size]
+                batch_labels = val_labels[i : i + batch_size]
+
+                loss = model.validation_step((batch_features, batch_labels))
+                total_loss += loss
+
+        return total_loss / (n_samples // batch_size)
 
     def _create_loader(self, dataset: Dataset, shuffle: bool = False) -> DataLoader:
         """Create a DataLoader for a dataset."""
@@ -582,11 +712,26 @@ class Pipeline:
         # Concatenate all batches
         return (np.concatenate(all_features), np.concatenate(all_labels))
 
-    def _save_results(self, result: EvaluationResult, class_names: List[str]) -> None:
-        """Save evaluation results and plots."""
-        plot_confusion_matrix(result, class_names, self.plots_dir)
-        plot_roc_curves(result, self.plots_dir)
-        save_metrics_summary(result, self.metrics_dir)
+    def _save_results(
+        self, results: List[EvaluationResult], class_names: List[str]
+    ) -> None:
+        """Save evaluation results and plots for all splits.
+
+        Args:
+            results: List of evaluation results from all splits for a model
+            class_names: List of class names for visualization
+        """
+        # Save metrics summary with all splits
+        save_metrics_summary(results, self.metrics_dir)
+
+        # Generate plots for all splits
+        for result in results:
+            # Save confusion matrix for each split
+            plot_confusion_matrix(result, class_names, self.plots_dir)
+
+            # Only generate ROC curves for test split
+            if result.dataset_split == "test":
+                plot_roc_curves(result, self.plots_dir)
 
     def _save_model(self, model: Model, path: Path) -> None:
         """Save model weights and architecture summary."""

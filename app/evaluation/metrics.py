@@ -6,12 +6,22 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
     confusion_matrix,
     roc_curve,
-    auc
+    auc,
 )
-
 from ..core.base import EvaluationResult
 from ..core.types import LabelArray
 from ..models.base import Model
+
+
+def batch_evaluate(
+    predictions: torch.Tensor, targets: torch.Tensor, n_classes: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute predictions and probabilities in batches to avoid memory spikes."""
+    with torch.no_grad():
+        probs = torch.softmax(predictions, dim=1)
+        preds = predictions.argmax(dim=1)
+
+    return preds.cpu().numpy(), probs.cpu().numpy()
 
 
 def evaluate_model(
@@ -23,34 +33,68 @@ def evaluate_model(
     y_test: Optional[Union[np.ndarray, torch.Tensor]] = None,
     features: Optional[torch.Tensor] = None,
     labels: Optional[torch.Tensor] = None,
+    batch_size: int = 1024,  # Added batch size parameter
 ) -> EvaluationResult:
     """Evaluate a trained model and compute all metrics."""
     device = model.device
+    n_classes = len(class_names)
 
-    # Handle input types
+    # Initialize arrays for predictions and ground truth
     if features is not None and labels is not None:
-        # Get predictions from features
-        features = features.to(dtype=torch.float32, device=device)
-        with torch.no_grad():
-            outputs = model(features)
-            y_pred = outputs.argmax(dim=1).cpu().numpy()
-            y_pred_proba = torch.softmax(outputs, dim=1).cpu().numpy()
+        # Convert labels to numpy once
         y_true = labels.cpu().numpy()
 
-    elif X_test is not None and y_test is not None:
-        # Make predictions from features
-        if isinstance(X_test, np.ndarray):
-            X_test = torch.from_numpy(X_test).float()
-        if isinstance(y_test, np.ndarray):
-            y_test = torch.from_numpy(y_test)
+        # Process in batches to avoid memory issues
+        n_samples = features.shape[0]
+        y_pred_list = []
+        y_pred_proba_list = []
 
-        features = X_test.to(device=device, dtype=torch.float32)
         with torch.no_grad():
-            outputs = model(features)
-            y_pred = outputs.argmax(dim=1).cpu().numpy()
-            y_pred_proba = torch.softmax(outputs, dim=1).cpu().numpy()
+            for i in range(0, n_samples, batch_size):
+                batch_features = features[i : i + batch_size].to(
+                    device=device, dtype=torch.float32
+                )
+                outputs = model(batch_features)
+                batch_preds, batch_probs = batch_evaluate(
+                    outputs, labels[i : i + batch_size], n_classes
+                )
+                y_pred_list.append(batch_preds)
+                y_pred_proba_list.append(batch_probs)
 
+        # Concatenate results
+        y_pred = np.concatenate(y_pred_list)
+        y_pred_proba = np.concatenate(y_pred_proba_list)
+
+    elif X_test is not None and y_test is not None:
+        # Convert input features to torch tensor if needed
+        if isinstance(X_test, np.ndarray):
+            features = torch.from_numpy(X_test).float()
+        else:
+            features = X_test
+
+        # Convert labels to numpy once
         y_true = y_test.cpu().numpy() if isinstance(y_test, torch.Tensor) else y_test
+
+        # Process in batches
+        n_samples = features.shape[0]
+        y_pred_list = []
+        y_pred_proba_list = []
+
+        with torch.no_grad():
+            for i in range(0, n_samples, batch_size):
+                batch_features = features[i : i + batch_size].to(
+                    device=device, dtype=torch.float32
+                )
+                outputs = model(batch_features)
+                batch_preds, batch_probs = batch_evaluate(
+                    outputs, torch.from_numpy(y_true[i : i + batch_size]), n_classes
+                )
+                y_pred_list.append(batch_preds)
+                y_pred_proba_list.append(batch_probs)
+
+        # Concatenate results
+        y_pred = np.concatenate(y_pred_list)
+        y_pred_proba = np.concatenate(y_pred_proba_list)
     else:
         raise ValueError("Must provide either (X_test, y_test) or (features, labels)")
 
@@ -58,7 +102,7 @@ def evaluate_model(
     y_pred = y_pred.astype(np.int64)
     y_true = y_true.astype(np.int64)
 
-    # Calculate basic metrics
+    # Calculate metrics (now using numpy arrays)
     accuracy = accuracy_score(y_true, y_pred)
     precision, recall, f1, _ = precision_recall_fscore_support(
         y_true, y_pred, average="weighted", zero_division=0
@@ -67,14 +111,15 @@ def evaluate_model(
     # Calculate confusion matrix
     cm = confusion_matrix(y_true, y_pred)
 
-    # Calculate ROC curves for each class
+    # Calculate ROC curves efficiently
     roc_curves = {}
     for i, class_name in enumerate(class_names):
+        # Binary indicator for this class
+        class_true = y_true == i
+        class_proba = y_pred_proba[:, i]
+
         # Calculate ROC curve for this class
-        fpr, tpr, _ = roc_curve(
-            y_true == i,  # Binary indicator for this class
-            y_pred_proba[:, i],  # Probability predictions for this class
-        )
+        fpr, tpr, _ = roc_curve(class_true, class_proba)
         roc_auc = auc(fpr, tpr)
 
         roc_curves[class_name] = {

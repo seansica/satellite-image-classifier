@@ -69,11 +69,11 @@ def plot_roc_curves(
         output_path: Path to save the plot
     """
     plt.figure(figsize=(10, 8))
-    
+
     # Define a color cycle for different classes
     colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'green', 'red',
                    'purple', 'brown', 'pink', 'gray', 'olive', 'cyan'])
-    
+
     # Plot ROC curve for each class
     for class_name, color in zip(result.roc_curves.keys(), colors):
         curves = result.roc_curves[class_name]
@@ -84,17 +84,17 @@ def plot_roc_curves(
             lw=2,
             label=f'{class_name} (AUC = {curves["auc"]:.2f})'
         )
-    
+
     # Add diagonal line
     plt.plot([0, 1], [0, 1], 'k--', lw=2)
-    
+
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
     plt.title(f'ROC Curves - {result.model_name}')
     plt.legend(loc="lower right")
-    
+
     # Save plot
     plt.savefig(
         output_path / f"{result.model_name}_roc_curves.png",
@@ -103,36 +103,88 @@ def plot_roc_curves(
     )
     plt.close()
 
-def save_metrics_summary(
-    result: EvaluationResult,
-    output_path: Path
-) -> None:
-    """Save evaluation metrics to a text file.
-    
+
+def save_metrics_summary(results: List[EvaluationResult], output_dir: Path) -> None:
+    """Save evaluation metrics summary to a file.
+
     Args:
-        result: Evaluation result containing metrics
-        output_path: Path to save the summary
+        results: List of evaluation results for different splits
+        output_dir: Directory to save the summary
     """
-    summary_path = output_path / f"{result.model_name}_metrics_summary.txt"
-    
-    with open(summary_path, 'w') as f:
-        f.write(f"Model: {result.model_name}\n")
-        f.write("-" * 50 + "\n\n")
-        
-        # Basic metrics
-        f.write("Performance Metrics:\n")
-        f.write(f"Accuracy:  {result.accuracy:.4f}\n")
-        f.write(f"Precision: {result.precision:.4f}\n")
-        f.write(f"Recall:    {result.recall:.4f}\n")
-        f.write(f"F1 Score:  {result.f1_score:.4f}\n\n")
-        
-        # Training time
-        f.write(f"Training Time: {result.training_time:.2f} seconds\n\n")
-        
-        # ROC AUC scores
-        f.write("ROC AUC Scores:\n")
-        for class_name, curves in result.roc_curves.items():
-            f.write(f"{class_name}: {curves['auc']:.4f}\n")
+    # Group results by model
+    model_results = {}
+    for result in results:
+        if result.model_name not in model_results:
+            model_results[result.model_name] = []
+        model_results[result.model_name].append(result)
+
+    # Generate report for each model
+    for model_name, model_splits in model_results.items():
+        output_path = output_dir / f"{model_name}_metrics_summary.txt"
+
+        with open(output_path, "w") as f:
+            # Model header
+            f.write(f"Model: {model_name}\n")
+            f.write("-" * 50 + "\n\n")
+
+            # Write performance metrics for each split
+            for result in model_splits:
+                f.write(f"Dataset Split: {result.dataset_split}\n")
+                f.write("Performance Metrics:\n")
+                f.write(f"Accuracy:  {result.accuracy:.4f}\n")
+                f.write(f"Precision: {result.precision:.4f}\n")
+                f.write(f"Recall:    {result.recall:.4f}\n")
+                f.write(f"F1 Score:  {result.f1_score:.4f}\n\n")
+
+            # Training time (same for all splits, so take from first result)
+            f.write(f"Training Time: {model_splits[0].training_time:.2f} seconds\n\n")
+
+            # ROC AUC Scores (using test split for final ROC scores)
+            test_result = next(r for r in model_splits if r.dataset_split == "test")
+            f.write("ROC AUC Scores:\n")
+            for class_name, roc_data in test_result.roc_curves.items():
+                f.write(f"{class_name}: {roc_data['auc']:.4f}\n")
+            f.write("\n")
+
+            # Additional split comparison
+            f.write("Performance Comparison Across Splits:\n")
+            f.write("-" * 30 + "\n")
+            f.write(f"{'Split':<10} {'Accuracy':<10} {'F1 Score':<10}\n")
+            f.write("-" * 30 + "\n")
+            for result in model_splits:
+                f.write(
+                    f"{result.dataset_split:<10} {result.accuracy:.4f}{' '*6} {result.f1_score:.4f}\n"
+                )
+            f.write("\n")
+
+
+def format_confusion_matrix(cm: np.ndarray, class_names: List[str]) -> str:
+    """Format confusion matrix as a string with proper alignment.
+
+    Args:
+        cm: Confusion matrix array
+        class_names: List of class names
+
+    Returns:
+        Formatted confusion matrix string
+    """
+    # Calculate column widths
+    label_width = max(len(name) for name in class_names) + 2
+    number_width = max(len(str(x)) for x in cm.flatten()) + 2
+
+    # Create header
+    header = " " * label_width
+    for name in class_names:
+        header += f"{name:<{number_width}}"
+
+    # Create rows
+    rows = []
+    for i, row in enumerate(cm):
+        row_str = f"{class_names[i]:<{label_width}}"
+        row_str += "".join(f"{x:<{number_width}}" for x in row)
+        rows.append(row_str)
+
+    return "\n".join([header] + rows)
 
 
 def save_grid_search_results(results, model_name: str, output_path: Path) -> None:
@@ -169,8 +221,6 @@ def plot_grid_search_results(results, model_name, output_path):
         plot_grid_search_lgr(results, model_name, output_path)
     else:
         print(f"{model_name} visualization not implemented yet")
-
-
 
 
 def plot_grid_search_svm(results, model_name, output_path) -> None:
