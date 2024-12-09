@@ -541,8 +541,8 @@ class Pipeline:
         return all_features, all_labels  # Return features instead of predictions
 
     def _load_dataset(self) -> Tuple[Dataset, Dataset, Dataset]:
-        """Load and prepare the datasets."""
-        # Create the transform for loading and preprocessing images
+        """Load and prepare the datasets with debugging information."""
+        # Create the transform
         transform = transforms.Compose(
             [
                 transforms.Resize(self.config.target_size),
@@ -553,41 +553,50 @@ class Pipeline:
             ]
         )
 
-        # Load all splits
-        train_data_dir = self.config.data_path / "train_rgb"
-        val_data_dir = self.config.data_path / "validate_rgb"
-        test_data_dir = self.config.data_path / "test_rgb"
+        # Load directories
+        train_dir = self.config.data_path / "train_rgb"
+        val_dir = self.config.data_path / "validate_rgb"
+        test_dir = self.config.data_path / "test_rgb"
 
-        # Load images and labels for each split
-        train_images, train_labels = self._load_split(train_data_dir)
-        val_images, val_labels = self._load_split(val_data_dir)
-        test_images, test_labels = self._load_test_split(test_data_dir)
+        # Get class names from train directory for consistent ordering
+        class_names = sorted([d.name for d in train_dir.iterdir() if d.is_dir()])
+        print(f"Found classes: {class_names}")
+        print(f"Number of classes: {len(class_names)}")
+
+        # Load splits with debugging
+        train_images, train_labels = self._load_split(train_dir, "train")
+        val_images, val_labels = self._load_split(val_dir, "val")
+        test_images, test_labels = self._load_test_split(test_dir, class_names)
+
+        # Debug class distribution
+        self._debug_class_distribution(train_labels, "Training")
+        self._debug_class_distribution(val_labels, "Validation")
+        self._debug_class_distribution(test_labels, "Test")
 
         # Create metadata
         metadata = DatasetMetadata(
             name=self.config.data_path.name,
-            class_names=self._get_class_names(train_data_dir),
-            n_classes=len(self._get_class_names(train_data_dir)),
+            class_names=class_names,
+            n_classes=len(class_names),
             n_samples=len(train_images) + len(val_images) + len(test_images),
             data_path=self.config.data_path,
         )
 
-        # Create dataset objects
+        # Create datasets
         train_dataset = Dataset(train_images, train_labels, metadata, transform)
         val_dataset = Dataset(val_images, val_labels, metadata, transform)
         test_dataset = Dataset(test_images, test_labels, metadata, transform)
 
-        # Move to device
-        return (
-            train_dataset.to(self.config.device),
-            val_dataset.to(self.config.device),
-            test_dataset.to(self.config.device),
-        )
+        return train_dataset, val_dataset, test_dataset
 
-    def _load_split(self, split_dir: Path) -> Tuple[List[torch.Tensor], List[str]]:
-        """Load images and labels from a directory split."""
+    def _load_split(
+        self, split_dir: Path, split_name: str
+    ) -> Tuple[List[torch.Tensor], List[str]]:
+        """Load images and labels from a directory split with debugging."""
         images = []
         labels = []
+
+        print(f"\nLoading {split_name} split from {split_dir}")
 
         for class_dir in split_dir.iterdir():
             if not class_dir.is_dir():
@@ -595,9 +604,11 @@ class Pipeline:
 
             # Get image files
             image_files = list(class_dir.glob("*.jpg")) + list(class_dir.glob("*.png"))
+            print(f"Found {len(image_files)} images in class {class_dir.name}")
 
             # Apply train_ratio if less than 1.0
             if self.config.train_ratio < 1.0:
+                original_count = len(image_files)
                 num_samples = int(len(image_files) * self.config.train_ratio)
                 if num_samples > 0:
                     rng = np.random.RandomState(self.config.random_seed)
@@ -605,8 +616,10 @@ class Pipeline:
                         image_files, size=num_samples, replace=False
                     ).tolist()
                 else:
-                    # Ensure at least one sample per class
                     image_files = image_files[:1]
+                print(
+                    f"Applied train_ratio {self.config.train_ratio}: {original_count} -> {len(image_files)} images"
+                )
 
             for img_path in tqdm(image_files, desc=f"Loading {class_dir.name}"):
                 images.append(img_path)
@@ -614,68 +627,66 @@ class Pipeline:
 
         return images, labels
 
-    def _load_test_split(self, test_dir: Path) -> Tuple[List[torch.Tensor], List[str]]:
-        """Load test images and labels.
+    def _debug_class_distribution(self, labels: List[str], split_name: str):
+        """Print class distribution information."""
+        from collections import Counter
 
-        The test set is organized differently from train/val:
-        - Images are in a flat directory without class subdirectories
-        - Labels are in a CSV file with numeric class indices
-        - File naming follows pattern 'image_XXXXX_img.jpg'
-        """
+        distribution = Counter(labels)
+        print(f"\n{split_name} set class distribution:")
+        for class_name, count in sorted(distribution.items()):
+            print(f"{class_name}: {count}")
+
+    def _load_test_split(
+        self, test_dir: Path, class_names: List[str]
+    ) -> Tuple[List[torch.Tensor], List[str]]:
+        """Load test images and labels with class mapping."""
         images = []
         labels = []
-
-        # Get ordered list of class names from training directory for index mapping
-        class_names = self._get_class_names(self.config.data_path / "train_rgb")
 
         # Create index to class name mapping
         idx_to_class = {idx: name for idx, name in enumerate(class_names)}
 
-        # Load test labels
+        print(f"\nLoading test split from {test_dir}")
+        print(f"Class index mapping: {idx_to_class}")
+
+        # Load test labels CSV
         labels_file = self.config.data_path / "test_labels.csv"
         df = pd.read_csv(labels_file)
 
-        # First collect all valid images and labels
+        print(f"Unique class indices in test CSV: {sorted(df['class'].unique())}")
+
         valid_samples = []
         for _, row in df.iterrows():
-            # Map numeric class index to class name
             class_idx = int(row["class"])
             if class_idx not in idx_to_class:
+                print(f"WARNING: Found invalid class index {class_idx} in test labels")
                 continue
 
             class_name = idx_to_class[class_idx]
-
-            # Handle both .png and .jpg extensions
-            img_path_png = test_dir / f"image_{str(row['id']).zfill(5)}_img.png"
             img_path_jpg = test_dir / f"image_{str(row['id']).zfill(5)}_img.jpg"
-
-            if img_path_png.exists():
-                valid_samples.append((img_path_png, class_name))
-            elif img_path_jpg.exists():
+            if img_path_jpg.exists():
                 valid_samples.append((img_path_jpg, class_name))
 
-        # Apply test_ratio if less than 1.0
-        if self.config.test_ratio < 1.0 and valid_samples:
+        print(f"Found {len(valid_samples)} valid test samples")
+
+        if self.config.test_ratio < 1.0:
+            original_count = len(valid_samples)
             num_samples = int(len(valid_samples) * self.config.test_ratio)
             if num_samples > 0:
                 rng = np.random.RandomState(self.config.random_seed)
-                indices = rng.choice(
-                    len(valid_samples), size=num_samples, replace=False
-                )
-                valid_samples = [valid_samples[i] for i in indices]
+                valid_samples = [
+                    valid_samples[i]
+                    for i in rng.choice(
+                        len(valid_samples), size=num_samples, replace=False
+                    )
+                ]
             else:
-                # Ensure at least one sample if possible
                 valid_samples = valid_samples[:1]
-
-        # Unzip the samples into separate lists
-        images, labels = zip(*valid_samples) if valid_samples else ([], [])
-
-        if not images:
-            raise ValueError(
-                f"No test images found in {test_dir}. "
-                "Check that the test directory and labels file are properly structured."
+            print(
+                f"Applied test_ratio {self.config.test_ratio}: {original_count} -> {len(valid_samples)} samples"
             )
 
+        images, labels = zip(*valid_samples) if valid_samples else ([], [])
         return images, labels
 
     def _get_class_names(self, train_dir: Path) -> List[str]:

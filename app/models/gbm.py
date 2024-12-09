@@ -1,14 +1,20 @@
+from pathlib import Path
+import joblib
 import torch
 import torch.nn as nn
 import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier
-from typing import Tuple
+from typing import Optional, Tuple
+
+import yaml
 
 from .base import Model
 
 @Model.register('gbm')
 class GradientBoostingModel(Model):
     """Gradient Boosting classifier using sklearn backend with PyTorch interface."""
+
+    model_type = "sklearn"  # Override model type
 
     def __init__(
         self,
@@ -35,8 +41,40 @@ class GradientBoostingModel(Model):
         # Initialize parent class
         super().__init__(input_dim, num_classes, **kwargs)
 
+    def save(self, path: Path) -> None:
+        """Save both sklearn model and torch components."""
+        # Save sklearn model
+        joblib.dump(self.model, path / "sklearn_model.joblib")
+        # Save torch components
+        torch.save({"dummy_param": self.dummy_param}, path / "torch_state.pt")
+
+    @classmethod
+    def load(
+        cls, path: Path, map_location: Optional[torch.device] = None
+    ) -> "GradientBoostingModel":
+        """Load saved model components."""
+        # Load architecture
+        with open(path / "architecture.yaml", "r") as f:
+            architecture = yaml.safe_load(f)
+
+        # Create instance
+        model = cls(
+            input_dim=architecture["input_dim"], num_classes=architecture["num_classes"]
+        )
+
+        # Load sklearn model
+        model.model = joblib.load(path / "sklearn_model.joblib")
+        model.is_fitted = True
+
+        # Load torch state
+        torch_state = torch.load(path / "torch_state.pt", map_location=map_location)
+        model.dummy_param.data = torch_state["dummy_param"]
+
+        return model
+
     def build(self) -> None:
         """Initialize the sklearn GradientBoostingClassifier."""
+        self.classes_ = np.arange(self.num_classes)
         self.model = GradientBoostingClassifier(
             n_estimators=self.n_estimators,
             max_depth=self.max_depth,
@@ -96,16 +134,22 @@ class GradientBoostingModel(Model):
             0.0 as loss value (actual training handled by sklearn)
         """
         X, y = batch
-
-        # Convert to numpy
         X_np = X.detach().cpu().numpy()
         y_np = y.detach().cpu().numpy()
 
-        # Fit the model
+        # Add dummy samples for missing classes
+        unique_classes = np.unique(y_np)
+        missing_classes = np.setdiff1d(self.classes_, unique_classes)
+
+        if len(missing_classes) > 0:
+            # Create one dummy sample per missing class
+            dummy_X = np.zeros((len(missing_classes), X_np.shape[1]))
+            X_np = np.vstack([X_np, dummy_X])
+            y_np = np.concatenate([y_np, missing_classes])
+
         self.model.fit(X_np, y_np)
         self.is_fitted = True
 
-        # Handle optimizer step with dummy parameter to maintain pipeline compatibility
         optimizer.zero_grad()
         loss = torch.tensor(0.0, requires_grad=True, device=self.dummy_param.device)
         loss.backward()
