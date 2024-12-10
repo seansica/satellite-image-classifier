@@ -1,0 +1,47 @@
+Model: GradientBoosting
+--------------------------------------------------
+
+Dataset Split: train
+Performance Metrics:
+Accuracy:  0.1411
+Precision: 0.0955
+Recall:    0.1411
+F1 Score:  0.0874
+
+Dataset Split: val
+Performance Metrics:
+Accuracy:  0.1438
+Precision: 0.0897
+Recall:    0.1438
+F1 Score:  0.0873
+
+Dataset Split: test
+Performance Metrics:
+Accuracy:  0.1418
+Precision: 0.0926
+Recall:    0.1418
+F1 Score:  0.0863
+
+Training Time: 19182.08 seconds
+
+ROC AUC Scores:
+AcrimSat: 0.6085
+Aquarius: 0.4802
+Aura: 0.6165
+Calipso: 0.4259
+Cloudsat: 0.5955
+CubeSat: 0.4979
+Debris: 0.6343
+Jason: 0.5848
+Sentinel-6: 0.3914
+TRMM: 0.4811
+Terra: 0.4487
+
+Performance Comparison Across Splits:
+------------------------------
+Split      Accuracy   F1 Score  
+------------------------------
+train      0.1411       0.0874
+val        0.1438       0.0873
+test       0.1418       0.0863
+
