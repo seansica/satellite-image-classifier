@@ -1,0 +1,29 @@
+timestamp: 2024-12-09 07:57:11.069957
+config:
+  batch_size: 32
+  data_path: ICIP-2021
+  device: mps
+  epochs: 1
+  feature_extractor:
+    type: HSVHistogramExtractor
+    output_dim: 94
+  train_ratio: 1.0
+  test_ratio: 1.0
+  target_size: !!python/tuple
+  - 224
+  - 224
+  learning_rate: 0.001
+  model_params:
+    rf:
+      n_estimators: 10
+      max_depth: 3
+      hidden_dim: null
+  models:
+  - svm
+system_info:
+  python_version: 3.11.10
+  platform: macOS-14.5-arm64-arm-64bit
+  pytorch_version: !!python/object/new:torch.torch_version.TorchVersion
+  - 2.5.1
+  cuda_available: false
+  cuda_version: null
