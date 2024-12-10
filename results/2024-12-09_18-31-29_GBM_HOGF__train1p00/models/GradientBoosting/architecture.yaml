@@ -1,0 +1,7 @@
+name: GradientBoosting
+type: GradientBoostingModel
+input_dim: 7056
+num_classes: 11
+parameters: 1
+trainable_parameters: 1
+hyperparameters: {}
