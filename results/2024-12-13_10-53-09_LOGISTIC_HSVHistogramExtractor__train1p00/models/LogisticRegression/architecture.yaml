@@ -1,0 +1,7 @@
+name: LogisticRegression
+type: LogisticRegressionModel
+input_dim: 94
+num_classes: 11
+parameters: 1045
+trainable_parameters: 1045
+hyperparameters: {}
