@@ -1,0 +1,11 @@
+{
+    "learning_rate": 0.001,
+    "batch_size": 64,
+    "weight_decay": 0.001,
+    "train_loss": 0.9535348578472043,
+    "val_loss": 1.2153379687114056,
+    "accuracy": 0.6246,
+    "precision": 0.6362446812602005,
+    "recall": 0.6246,
+    "f1": 0.6122216438483944
+}
